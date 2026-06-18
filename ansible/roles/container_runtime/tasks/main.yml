@@ -1,0 +1,61 @@
+---
+# Docker CE on Rocky/RHEL-family, with data-root relocated to /data and made
+# SELinux-clean. Re-runnable.
+
+- name: Docker CE repo
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/centos/docker-ce.repo
+    dest: /etc/yum.repos.d/docker-ce.repo
+    mode: "0644"
+
+- name: Install Docker CE + compose plugin
+  ansible.builtin.dnf:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+
+- name: Create relocated data-root
+  ansible.builtin.file:
+    path: "{{ docker_data_root }}"
+    state: directory
+    mode: "0710"
+
+- name: SELinux fcontext for data-root (match default /var/lib/docker)
+  community.general.sefcontext:
+    target: "{{ docker_data_root }}(/.*)?"
+    setype: container_var_lib_t
+    state: present
+  register: dockerfc
+
+- name: Apply SELinux labels on data-root
+  ansible.builtin.command: restorecon -RF {{ docker_data_root }}
+  when: dockerfc.changed
+  changed_when: true
+
+- name: Point daemon at relocated data-root
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    content: |
+      {
+        "data-root": "{{ docker_data_root }}",
+        "log-driver": "json-file",
+        "log-opts": { "max-size": "10m", "max-file": "3" }
+      }
+    mode: "0644"
+  notify: restart docker
+
+- name: Enable + start Docker
+  ansible.builtin.systemd:
+    name: docker
+    enabled: true
+    state: started
+
+- name: Add {{ ansible_user }} to docker group
+  ansible.builtin.user:
+    name: "{{ ansible_user }}"
+    groups: docker
+    append: true

@@ -1,0 +1,45 @@
+---
+# Base host: assert /data, packages, firewall, time, ssh hygiene.
+
+- name: Assert /data is mounted (everything stateful depends on it)
+  ansible.builtin.command: findmnt -no TARGET {{ data_mount }}
+  changed_when: false
+
+- name: Base packages
+  ansible.builtin.dnf:
+    name:
+      - vim
+      - git
+      - chrony
+      - firewalld
+      - policycoreutils-python-utils   # semanage/restorecon for SELinux
+    state: present
+
+- name: Time sync on
+  ansible.builtin.systemd:
+    name: chronyd
+    enabled: true
+    state: started
+
+- name: Firewall on
+  ansible.builtin.systemd:
+    name: firewalld
+    enabled: true
+    state: started
+
+- name: Allow inbound TCP
+  ansible.posix.firewalld:
+    port: "{{ item }}/tcp"
+    permanent: true
+    immediate: true
+    state: enabled
+  loop: "{{ firewall_allowed_tcp }}"
+
+- name: SSH hardening — no root login, key-only
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/10-docs-bridge.conf
+    content: |
+      PermitRootLogin no
+      PasswordAuthentication no
+    mode: "0644"
+  notify: restart sshd

@@ -10,26 +10,31 @@ stack design (retrieval layer, ingestion, MCP server, LibreChat front-end).
 Everything in this repo right now is about getting the Pi 5 into a clean,
 Ansible-manageable state — **before** any docs-bridge containers are deployed.
 
-The Pi 5 is being migrated from its current SD-card Raspberry Pi OS install to
-**Rocky Linux 10 on the NVMe SSD**, with the SD card retained as an automatic
-boot fallback. Rationale, hardware layout, and the full runbook live in
-[`provisioning/`](./provisioning/).
-
-| Doc | What it covers |
-|---|---|
-| [`provisioning/00-decisions.md`](./provisioning/00-decisions.md) | OS choice (why Rocky 10, not 9 / not Debian 12), disk layout, research findings + sources |
-| [`provisioning/01-os-swap-runbook.md`](./provisioning/01-os-swap-runbook.md) | Step-by-step bare-metal swap: image → NVMe, repartition, chroot preseed, boot order, first boot |
-| [`provisioning/02-host-prep.md`](./provisioning/02-host-prep.md) | Phase-2 Ansible host prep: Docker CE, data-root relocation, SELinux, mounts, firewall |
-
-### Two-phase model
+The Pi 5 is migrated from SD-card Raspberry Pi OS to **Rocky Linux 10 on the NVMe
+SSD**, with the SD kept as boot fallback. Two phases:
 
 ```
-Phase 1  (bare metal, one-time, manual runbook)
-  Raspberry Pi OS on SD  ──►  Rocky Linux 10 on NVMe (reachable, same user + SSH key)
+Phase 1  one-time, manual         provisioning/os-swap.md
+  RPi OS on SD  ──►  Rocky 10 on NVMe  (reachable, same user + SSH key)
 
-Phase 2  (Ansible, idempotent, re-runnable)
-  reachable Rocky host   ──►  Docker host with data-root on /data, ready for docs-bridge
+Phase 2  Ansible, idempotent      ansible/
+  reachable Rocky host  ──►  Docker host, data-root on /data
 ```
 
-Phase 1 cannot be done by Ansible (Ansible needs a running, reachable host).
-Phase 2 onward — and all docs-bridge deployment — is Ansible-driven.
+Phase 1 can't be Ansible (no Rocky host to manage yet). Everything after — host
+prep and all docs-bridge deployment — is Ansible (`ansible/playbooks/site.yml`).
+
+**Why Rocky 10:** Pi 5 needs kernel ≥6.6 → rules out Debian 12 and Rocky 9;
+Rocky 10 (RHEL 10, k6.12) supports Pi 5 and is dnf/RHEL-family like the M2 target,
+so the Pi and M2 share one Ansible path.
+
+```
+ansible/
+├── inventory/   hosts.yml (pi5 @ 192.168.2.11) + group_vars
+├── playbooks/   site.yml → common, container_runtime
+└── roles/
+    ├── common/            packages, firewall, time, ssh hardening, /data assert
+    └── container_runtime/ Docker CE, data-root → /data/docker, SELinux label
+```
+
+Run: `cd ansible && ansible-galaxy collection install -r requirements.yml && ansible-playbook playbooks/site.yml`
