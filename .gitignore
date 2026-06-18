@@ -1,0 +1,35 @@
+# Secrets — never commit
+**/vault.yml
+**/*.vault
+.env
+*.env
+**/group_vars/**/vault.yml
+*.key
+*.pem
+id_rsa*
+id_ed25519*
+authorized_keys
+
+# OS images / large binaries — do not version
+*.img
+*.img.xz
+*.img.gz
+*.iso
+*.zip
+
+# Ansible noise
+*.retry
+.ansible/
+*.log
+
+# Python / tooling
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Editor / OS cruft
+.DS_Store
+*.swp
+.idea/
+.vscode/
