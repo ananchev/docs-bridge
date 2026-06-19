@@ -374,7 +374,7 @@ endpoints:
 mcpServers:
   docs-bridge:
     type: streamable-http          # match the server transport (or 'sse')
-    url: "{{ docs_bridge_url }}"    # behind NPM, e.g. https://docs.tonio.cc/mcp
+    url: "{{ docs_bridge_url }}"    # behind NPM, e.g. https://docs.example.com/mcp
     headers:
       Authorization: "Bearer ${DOCS_BRIDGE_TOKEN}"
 ```
@@ -397,7 +397,7 @@ ports: { mcp: 8080, qdrant: 6333, chat: 3080 }
 librechat_tag: "vX.Y.Z"   # PIN all three
 mongo_tag: "7.x"
 meili_tag: "vX.Y"
-docs_bridge_url: "https://docs.tonio.cc/mcp"
+docs_bridge_url: "https://docs.example.com/mcp"
 
 # pi5.yml
 deploy_chat: false
@@ -429,7 +429,7 @@ NPM/Cloudflare URL (validates the auth + proxy path).
 ### Smoke tests (map to the §11 checklist)
 ```bash
 TOKEN="$DOCS_BRIDGE_TOKEN"
-BASE="http://localhost:8080"      # then re-run with BASE="https://docs.tonio.cc"
+BASE="http://localhost:8080"      # then re-run with BASE="https://docs.example.com"
 
 # [liveness]
 curl -fsS "$BASE/healthz"

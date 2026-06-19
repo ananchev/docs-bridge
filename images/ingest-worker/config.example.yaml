@@ -1,0 +1,28 @@
+# Example ingest-worker config — the REAL one is templated by containers-at-home
+# from group_vars + vault and mounted at /config/config.yaml (design §6).
+# This file documents the shape and the Pi-vs-M2 knobs; it is NOT used at deploy.
+
+embedding_model: BAAI/bge-m3      # full-fidelity, no stand-in (design §1)
+embedding_dim: 1024               # BGE-M3 dense dim
+
+chunk:
+  target_tokens: 400
+  overlap: 60
+  strategy: structure_aware
+
+qdrant:
+  host: qdrant                    # service name on the container network
+  port: 6333
+  on_disk_vectors: false          # pi5: false (tiny corpus) | macmini: true
+  quantization: none              # none | scalar  (macmini: scalar when corpus grows)
+
+ingest:
+  batch_size: 8                   # pi5: 8 (peak RAM < 8GB) | macmini: 64
+  two_pass: true
+
+manifest_path: /data/state/manifest.sqlite
+
+# N independent corpora; each its own dir + Qdrant collection (design §6).
+subjects:
+  - { name: teamcenter-aig, dir: /data/docs/aig, collection: aig }
+  - { name: power-query,    dir: /data/docs/pq,  collection: pq }

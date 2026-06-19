@@ -93,9 +93,9 @@ without depending on the dying disk:
 
 - **WiFi disabled:** `dtoverlay=disable-wifi` in config.txt (removes the
   `brcmfmac` console spam; box is ethernet-only).
-- **Remote logging → Manjaro log server (192.168.2.9):** Pi runs `rsyslog` with
-  `imklog` + `*.* omfwd` (UDP, in-memory queue) → Manjaro `/var/log/pi5.log`
-  (rule keyed on `$fromhost-ip == '192.168.2.11'`). journald stays **volatile**
+- **Remote logging → Manjaro log server (`<RSYSLOG_HOST>`):** Pi runs `rsyslog`
+  with `imklog` + `*.* omfwd` (UDP, in-memory queue) → Manjaro `/var/log/pi5.log`
+  (rule keyed on `$fromhost-ip == '<PI_IP>'`). journald stays **volatile**
   on purpose — the whole forward path is RAM/UDP, no NVMe dependency, so a
   controller drop is still shipped off-box in real time.
 - **Soak:** leave idle. If it wedges again despite `APST=0`, the kernel errors
