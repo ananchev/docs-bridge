@@ -70,6 +70,17 @@ p4  446G  xfs   DATA     /data (created by us; Docker data-root + corpora)
    the cmdline flags. (The relabel itself completed fine — it was just the noise.)
 5. **Lock the image's default account:** `sudo usermod -L rocky` (default password
    `rockylinux` is public).
+6. **NVMe drops off the bus when idle (power-save) — found next morning.** The
+   Kioxia KBG50ZNS512G entered D3cold deep-sleep overnight and the controller
+   never returned (`nvme0: controller is down … Unable to change power state from
+   D3cold to D0`), forcing root read-only and shutting down `/data` → box wedged,
+   needing a hard reset. Fix (the kernel's own suggestion in the log): add to
+   `cmdline.txt` → `nvme_core.default_ps_max_latency_us=0 pcie_aspm=off`. Verify:
+   `cat /sys/module/nvme_core/parameters/default_ps_max_latency_us` → `0`. Real
+   proof is surviving an idle stretch. If it still recurs: force PCIe Gen 2
+   (`dtparam=pciex1_gen=2` in config.txt) and/or disable the unused WiFi
+   (`dtoverlay=disable-wifi`, which was spamming `brcmfmac power save` during the
+   wedged shutdown).
 
 **Rollback:** SD is never touched. Unplug NVMe ribbon → boots SD; or set
 `BOOT_ORDER=0xf461`. Re-flash from step 2 to start over.
