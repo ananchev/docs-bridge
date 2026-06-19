@@ -1,2 +1,0 @@
-# Pi 5-specific overrides (host-prep scope). docs-bridge app vars live separately.
-# (defaults from all.yml are fine; pin Pi-specific bits here as needed)

@@ -1,9 +1,0 @@
----
-# Host prep for the docs-bridge runtime. Idempotent; re-run = converge.
-# Runs AFTER the OS swap (see ../../provisioning/os-swap.md) — target is Rocky 10.
-- name: docs-bridge host prep
-  hosts: pi5
-  become: true
-  roles:
-    - common
-    - container_runtime

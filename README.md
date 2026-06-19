@@ -1,40 +1,48 @@
 # docs-bridge
 
-Ansible-deployed, multi-subject RAG stack. Built and validated on a **Raspberry
-Pi 5**, then redeployed unchanged to a **Mac mini M2 (Asahi Fedora)**. See
+A multi-subject, self-updating documentation **RAG stack** — retrieval layer +
+ingestion + an MCP server. Built and validated on a **Raspberry Pi 5 (Rocky Linux
+10, NVMe)**, then redeployed to a **Mac mini M2 (Asahi Fedora)**. See
 [`docs-bridge-ansible-design.md`](./docs-bridge-ansible-design.md) for the full
-stack design (retrieval layer, ingestion, MCP server, LibreChat front-end).
+stack design.
 
-## Current focus: Pi 5 host setup & provisioning
+## What lives here (the product) vs. where it's deployed (the operator)
 
-Everything in this repo right now is about getting the Pi 5 into a clean,
-Ansible-manageable state — **before** any docs-bridge containers are deployed.
+This repo is the **product**: the container images, the config contract, the
+design, and the one-time host provisioning. **Deployment, secrets, runtime
+install, and backup are owned by the separate `containers-at-home` fleet repo** —
+docs-bridge is deployed as just-another-app there, using the same module-based
+playbook pattern, vault, and backup machinery as every other app.
 
-The Pi 5 is migrated from SD-card Raspberry Pi OS to **Rocky Linux 10 on the NVMe
-SSD**, with the SD kept as boot fallback. Two phases:
+| Concern | Repo |
+|---|---|
+| Container images (`ingest-worker`, `docs-bridge`) — Dockerfiles + source | **docs-bridge** |
+| Config schema / contract + design docs | **docs-bridge** |
+| Pi 5 OS bring-up (flash Rocky to NVMe) — `provisioning/os-swap.md` | **docs-bridge** |
+| Inventory, `host_vars`, **Podman runtime** install | containers-at-home |
+| Deploy playbook (`applications/docs-bridge.yml`, `docker_container` modules) | containers-at-home |
+| Vault secrets, pinned image tags, backup/restore wiring | containers-at-home |
 
-```
-Phase 1  one-time, manual         provisioning/os-swap.md
-  RPi OS on SD  ──►  Rocky 10 on NVMe  (reachable, same user + SSH key)
+**The boundary = a container image + a documented config contract.** Nothing else
+crosses it: containers-at-home never needs the app internals; docs-bridge never
+needs the inventory/vault/backup topology.
 
-Phase 2  Ansible, idempotent      ansible/
-  reachable Rocky host  ──►  Docker host, data-root on /data
-```
+## Runtime: Podman (via its Docker-compatible socket)
 
-Phase 1 can't be Ansible (no Rocky host to manage yet). Everything after — host
-prep and all docs-bridge deployment — is Ansible (`ansible/playbooks/site.yml`).
+The Pi (Rocky) and the M2 (Asahi Fedora) are both RHEL-family, so they run
+**Podman** — but through Podman's **Docker-API socket** (`podman` + `podman-docker`
++ `podman.socket` + `podman-restart.service`). That lets containers-at-home's
+existing `community.docker.*` modules drive Podman unchanged, so docs-bridge joins
+a Docker fleet without forking the automation. The rest of the fleet stays on
+Docker, untouched.
 
-**Why Rocky 10:** Pi 5 needs kernel ≥6.6 → rules out Debian 12 and Rocky 9;
-Rocky 10 (RHEL 10, k6.12) supports Pi 5 and is dnf/RHEL-family like the M2 target,
-so the Pi and M2 share one Ansible path.
+## Status
 
-```
-ansible/
-├── inventory/   hosts.yml (pi5 @ 192.168.2.11) + group_vars
-├── playbooks/   site.yml → common, container_runtime
-└── roles/
-    ├── common/            packages, firewall, time, ssh hardening, /data assert
-    └── container_runtime/ Docker CE, data-root → /data/docker, SELinux label
-```
-
-Run: `cd ansible && ansible-galaxy collection install -r requirements.yml && ansible-playbook playbooks/site.yml`
+- **Pi 5 → Rocky Linux 10.2 on NVMe: done & verified** (enforcing SELinux, same
+  user/key, `/data` on a 446 GB XFS partition, SD kept as fallback). See
+  [`provisioning/os-swap.md`](./provisioning/os-swap.md) for the as-built runbook
+  and the gotchas (PARTUUID boot, SELinux relabel, **NVMe power-save/APST fix**).
+- **NVMe stability soak in progress** — APST disabled; remote logging to the
+  Manjaro log server is set up to catch any recurrence.
+- **Next:** build the images here; wire the deploy/runtime/backup in
+  containers-at-home.

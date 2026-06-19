@@ -1,10 +1,20 @@
-# docs-bridge — Ansible-Deployed RAG Stack (Design Sketch)
+# docs-bridge — RAG Stack (Design Sketch)
 
-> Cold-start spec for a separate build session. Goal: a fully Ansible-driven
-> deployment (host prep **and** container lifecycle) of a multi-subject,
-> self-updating documentation RAG stack. Validate on a Raspberry Pi 5 (8GB,
-> 500GB SSD) with a <500MB PDF/HTML corpus, then redeploy unchanged to a Mac
-> mini M2 (16GB, Asahi Fedora) and scale the corpus.
+> Cold-start spec for a separate build session. A multi-subject, self-updating
+> documentation RAG stack. Validate on a Raspberry Pi 5 (8GB, 500GB SSD) with a
+> <500MB PDF/HTML corpus, then redeploy to a Mac mini M2 (16GB, Asahi Fedora)
+> and scale the corpus.
+
+> ⚠️ **Updated — deployment boundary (supersedes the original "self-deploying"
+> premise).** docs-bridge is **not** self-deploying. This repo is the *product*
+> (container images + config contract + design + the Pi OS provisioning). It is
+> **deployed by the existing `containers-at-home` fleet repo** as just-another-app,
+> reusing that repo's inventory, vault, module-based deploy pattern, runtime
+> install, and backup/restore. Runtime is **Podman** on the RHEL-family hosts (Pi
+> Rocky 10, M2 Asahi Fedora) via Podman's **Docker-compatible socket**, so
+> `containers-at-home`'s `community.docker.*` modules drive it unchanged. The rest
+> of this doc still describes the stack's architecture; read §3–§4 with this
+> boundary in mind (deploy mechanism lives in `containers-at-home`, not here).
 
 ---
 
@@ -45,55 +55,63 @@ behind: Nginx Proxy Manager -> Cloudflare, bearer-token auth (existing fleet pat
 
 ---
 
-## 3. Container runtime decision (pick in build session)
+## 3. Container runtime — DECIDED: Podman via Docker-compatible socket
 
-Ansible needs a way to manage the container lifecycle. Two clean options:
+Resolved (supersedes the earlier "Docker+compose vs Podman+Quadlet" options).
+The fleet's `containers-at-home` repo deploys every app with **`community.docker.*`
+modules** (imperative `docker_container`/`docker_network`, ~55 uses) — **not**
+compose, **not** Quadlet. docs-bridge follows that same pattern.
 
-| Approach | Mechanism | Pros | Cons |
-|---|---|---|---|
-| **A. Docker + compose** (recommended default) | `community.docker.docker_compose_v2` applies a templated `docker-compose.yml` idempotently | One mechanism on both hosts; compose stays the single source of truth; trivial | docker-ce on Fedora Asahi is less "native" than Podman (works fine on aarch64) |
-| **B. Podman + Quadlet** | Ansible templates `.container`/`.network`/`.volume` units into `/etc/containers/systemd/`, `daemon-reload`, enable/start | Fedora-native; containers become real systemd units (boot persistence, journald); rootless option | Two slightly different setups; needs recent Podman on Pi OS |
+On the RHEL-family hosts (Pi Rocky 10, M2 Asahi Fedora) the runtime is **Podman**,
+exposed through its **Docker-API socket**:
 
-**Recommendation:** start with **A** for the portable playbook (one command, both
-hosts). Consider migrating the M2 to **B (Quadlet)** later if you want
-systemd-managed containers there — it fits your timer/watchdog style. Keep the
-compose file as the canonical topology either way.
+- `podman` + `podman-docker` + `systemctl enable --now podman.socket podman-restart.service`
+- `podman-docker` symlinks `/run/docker.sock` → `podman.sock`, so `community.docker.*`
+  connect unchanged; `podman-restart.service` reproduces `restart_policy: unless-stopped`
+  on boot (Podman is daemonless); `:Z`/`:z` SELinux labels are native to Podman.
+
+Net: docs-bridge joins the Docker-based fleet without forking the automation, and
+the rest of the fleet stays on Docker untouched. The one rough edge to smoke-test
+is **image build over Podman's compat API** (`docker_image_build`) — fallback is a
+`podman build` shell task or pre-built/pinned images pulled from a registry
+(preferred for Pi→M2 portability).
 
 ---
 
-## 4. Repo layout
+## 4. Repo layout (split across two repos)
 
+**This repo — the product:**
 ```
 docs-bridge/
-├── ansible/
-│   ├── inventory/
-│   │   ├── hosts.yml
-│   │   └── group_vars/
-│   │       ├── all.yml            # shared: models, chunking, ports, image tags, subjects
-│   │       ├── all/vault.yml      # SECRETS (ansible-vault): OpenRouter key, bearer token
-│   │       ├── pi5.yml            # small batches, quant off, runtime=docker, mem limits
-│   │       └── macmini.yml        # bigger batches, more subjects, (runtime choice)
-│   ├── roles/
-│   │   ├── common/                # base pkgs, user, dirs, ssh, ufw
-│   │   ├── container_runtime/     # install docker-ce | podman per ansible_os_family
-│   │   └── docs_bridge/           # THE deploy role
-│   │       ├── templates/
-│   │       │   ├── docker-compose.yml.j2
-│   │       │   ├── config.yaml.j2
-│   │       │   └── env.j2
-│   │       ├── tasks/main.yml     # template -> build/pull -> compose up (idempotent)
-│   │       └── handlers/main.yml  # restart services on config change
-│   ├── playbooks/
-│   │   ├── site.yml               # common -> container_runtime -> docs_bridge
-│   │   ├── ingest.yml             # ad-hoc: trigger a sync run
-│   │   └── snapshot.yml           # qdrant snapshot / restore (migration)
-│   └── requirements.yml           # community.docker and/or containers.podman
 ├── images/
-│   ├── ingest-worker/             # Dockerfile + two-pass pipeline (Python)
-│   └── docs-bridge/               # Dockerfile + FastMCP server (Python)
-├── config.schema.md               # documented config keys
+│   ├── ingest-worker/   # Dockerfile + two-pass pipeline (Python)
+│   └── docs-bridge/     # Dockerfile + FastMCP server (Python)
+├── config.schema.md     # documented config keys (the contract)
+├── provisioning/
+│   └── os-swap.md        # one-time Pi 5 OS bring-up (Rocky → NVMe)
+├── docs-bridge-ansible-design.md
 └── README.md
 ```
+
+**`containers-at-home` — the operator** (existing fleet repo; docs-bridge is added
+as just-another-app following its conventions):
+```
+containers-at-home/ansible/
+├── inventories/pi5/hosts + host_vars/pi5     # paths (/data/docker), podman flag
+├── inventories/group_vars/all/
+│   ├── vault.yml                              # SECRETS (OpenRouter key, bearer token)
+│   └── app_versions.yml                       # pinned image tags (qdrant, docs-bridge)
+├── roles or task: podman runtime              # podman + podman-docker + sockets
+└── applications/docs-bridge.yml               # THE deploy playbook:
+      community.docker.docker_network / docker_container, config.yaml.j2 from
+      group_vars+vault, :Z volume mounts under /data. Run via run-playbook.sh
+      (inherits --ask-vault-pass + group_vars symlink).
+```
+
+The earlier `roles/docs_bridge` (compose/Quadlet, self-deploying) is replaced by
+the single `applications/docs-bridge.yml` in `containers-at-home`. Ingestion
+triggers (`ingest`) and Qdrant snapshot/restore become tasks there too (or a
+`systemd timer`, §8).
 
 ---
 

@@ -1,4 +1,0 @@
-collections:
-  - name: community.docker     # docker_compose_v2, docker_image (used later by docs_bridge)
-  - name: community.general    # sefcontext (SELinux), misc
-  - name: ansible.posix        # firewalld, mount

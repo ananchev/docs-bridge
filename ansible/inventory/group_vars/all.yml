@@ -1,6 +1,0 @@
-# Shared host-prep vars. Both pi5 (Rocky 10) and macmini (Fedora Asahi) are
-# RHEL-family / dnf, so these roles share one path.
-container_runtime: docker
-data_mount: /data
-docker_data_root: /data/docker
-firewall_allowed_tcp: [22]
