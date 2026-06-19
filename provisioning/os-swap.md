@@ -84,3 +84,20 @@ p4  446G  xfs   DATA     /data (created by us; Docker data-root + corpora)
 
 **Rollback:** SD is never touched. Unplug NVMe ribbon → boots SD; or set
 `BOOT_ORDER=0xf461`. Re-flash from step 2 to start over.
+
+## Stability soak & remote logging (current)
+
+After applying the APST fix the box still wedged once more, and journald is
+**volatile** so the evidence was lost on reboot — twice. To catch the real cause
+without depending on the dying disk:
+
+- **WiFi disabled:** `dtoverlay=disable-wifi` in config.txt (removes the
+  `brcmfmac` console spam; box is ethernet-only).
+- **Remote logging → Manjaro log server (192.168.2.9):** Pi runs `rsyslog` with
+  `imklog` + `*.* omfwd` (UDP, in-memory queue) → Manjaro `/var/log/pi5.log`
+  (rule keyed on `$fromhost-ip == '192.168.2.11'`). journald stays **volatile**
+  on purpose — the whole forward path is RAM/UDP, no NVMe dependency, so a
+  controller drop is still shipped off-box in real time.
+- **Soak:** leave idle. If it wedges again despite `APST=0`, the kernel errors
+  land in `pi5.log` → next levers: `dtparam=pciex1_gen=2`, or the drive's HMB
+  quirk (`failed to allocate host memory buffer`), or a different NVMe drive.
