@@ -29,7 +29,9 @@ dependencies = [
 # only (tools/export_bge_m3_onnx.py) and never installed into the runtime image.
 [project.optional-dependencies]
 onnx = ["onnxruntime==1.20.1"]
-export = ["optimum[exporters]>=1.23", "onnx>=1.17"]
+# Export uses torch.onnx (torch+transformers come from the base image); we only need
+# the onnx package here so onnxruntime.quantization can write the INT8 model.
+export = ["onnx>=1.17"]
 
 [project.scripts]
 ingest = "ingest_worker.cli:main"

@@ -5,8 +5,8 @@ self-sourced: it pulls the official weights from HF, exports the XLM-R encoder t
 ONNX via Optimum, extracts the real sparse head, and (optionally) makes an INT8
 copy. The output dir is what ingest_worker.embed_onnx.OnnxEmbedder loads.
 
-Run (on a host with torch available, e.g. after the benchmark frees RAM):
-    pip install "optimum[exporters]" onnx onnxruntime
+Run (on a host with torch+transformers available, e.g. after the benchmark frees RAM):
+    pip install onnx onnxruntime          # torch+transformers come from the base image
     python tools/export_bge_m3_onnx.py --out /data/cache/bge-m3-onnx --quantize
 
 Outputs in --out:
@@ -44,19 +44,46 @@ def main() -> int:
 
     os.makedirs(args.out, exist_ok=True)
 
-    # 1. Export the XLM-R encoder to ONNX (Optimum handles dynamic axes + opset).
-    #    Use the export-only entry point from optimum[exporters]; the ORTModel*
-    #    classes live in optimum.onnxruntime, a separate integration we don't install.
+    # 1. Export the XLM-R encoder to ONNX with torch.onnx directly (no optimum).
+    #    optimum keeps relocating its onnx exporter between releases/extras, so we use
+    #    torch + transformers (both already in the base image) and wrap the model to
+    #    emit ONLY last_hidden_state -- that single tensor is the encoder; the dense and
+    #    sparse heads are applied later in numpy by OnnxEmbedder.
     print(f"[1/4] exporting {MODEL_ID}@{args.revision} encoder -> ONNX ...")
-    from optimum.exporters.onnx import main_export
+    import torch
+    from transformers import AutoModel, AutoTokenizer
 
-    main_export(
-        model_name_or_path=MODEL_ID,
-        output=args.out,            # writes model.onnx + tokenizer.json + config.json
-        task="feature-extraction",  # encoder -> last_hidden_state (no pooling head)
-        revision=args.revision,
-        opset=OPSET,
-    )
+    model = AutoModel.from_pretrained(MODEL_ID, revision=args.revision).eval()
+    tok = AutoTokenizer.from_pretrained(MODEL_ID, revision=args.revision)
+    tok.save_pretrained(args.out)  # writes tokenizer.json (fast tokenizer)
+
+    class _Encoder(torch.nn.Module):
+        def __init__(self, m: torch.nn.Module) -> None:
+            super().__init__()
+            self.m = m
+
+        def forward(self, input_ids, attention_mask):  # noqa: ANN001
+            return self.m(
+                input_ids=input_ids, attention_mask=attention_mask
+            ).last_hidden_state
+
+    enc = tok(["parity probe"], return_tensors="pt", padding=True)
+    onnx_path = os.path.join(args.out, "model.onnx")
+    with torch.no_grad():
+        torch.onnx.export(
+            _Encoder(model),
+            (enc["input_ids"], enc["attention_mask"]),
+            onnx_path,
+            input_names=["input_ids", "attention_mask"],
+            output_names=["last_hidden_state"],
+            dynamic_axes={
+                "input_ids": {0: "batch", 1: "seq"},
+                "attention_mask": {0: "batch", 1: "seq"},
+                "last_hidden_state": {0: "batch", 1: "seq"},
+            },
+            opset_version=OPSET,
+            do_constant_folding=True,
+        )
 
     # 2. Pull the real sparse head (Linear 1024->1) and store it as numpy.
     print("[2/4] extracting sparse_linear head ...")
