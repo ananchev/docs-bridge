@@ -55,10 +55,20 @@ class Parser:
 
     def __init__(self, cfg: Config) -> None:
         from docling.chunking import HybridChunker
-        from docling.document_converter import DocumentConverter
+        from docling.datamodel.base_models import InputFormat
+        from docling.datamodel.pipeline_options import PdfPipelineOptions
+        from docling.document_converter import DocumentConverter, PdfFormatOption
 
         self.cfg = cfg
-        self._convert = DocumentConverter().convert
+        # OCR (EasyOCR) runs on every page by default and is the dominant cost on
+        # CPU — unnecessary for digital PDFs. Default off; enable per deployment for
+        # scanned corpora. Table-structure detection stays on (tables carry content).
+        pdf_opts = PdfPipelineOptions()
+        pdf_opts.do_ocr = cfg.parse.ocr
+        pdf_opts.do_table_structure = cfg.parse.table_structure
+        self._convert = DocumentConverter(
+            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_opts)}
+        ).convert
         # Structure-aware chunking with the configured token budget. HybridChunker
         # merges undersized peers and splits oversized blocks to ~max_tokens.
         self._chunker = HybridChunker(max_tokens=cfg.chunk.target_tokens)

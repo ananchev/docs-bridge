@@ -10,6 +10,10 @@ chunk:
   overlap: 60
   strategy: structure_aware
 
+parse:
+  ocr: false              # OCR (EasyOCR) is slow on CPU; needless for digital PDFs
+  table_structure: true   # keep table detection (tables carry content)
+
 qdrant:
   host: qdrant                    # service name on the container network
   port: 6333

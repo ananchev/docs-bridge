@@ -38,6 +38,12 @@ class QdrantCfg:
 
 
 @dataclass
+class ParseCfg:
+    ocr: bool = False              # OCR is slow on CPU + needless for digital PDFs
+    table_structure: bool = True   # keep: tables carry real content
+
+
+@dataclass
 class IngestCfg:
     batch_size: int = 8            # pi5: 8 (peak RAM < 8GB); macmini: 64
     two_pass: bool = True          # release Docling before loading BGE-M3
@@ -48,6 +54,7 @@ class Config:
     embedding_model: str
     embedding_dim: int
     chunk: ChunkCfg
+    parse: ParseCfg
     qdrant: QdrantCfg
     ingest: IngestCfg
     subjects: list[Subject]
@@ -68,6 +75,7 @@ def load(path: str | None = None) -> Config:
         raw = yaml.safe_load(fh) or {}
 
     chunk = ChunkCfg(**(raw.get("chunk") or {}))
+    parse = ParseCfg(**(raw.get("parse") or {}))
     qdrant = QdrantCfg(**(raw.get("qdrant") or {}))
     ingest = IngestCfg(**(raw.get("ingest") or {}))
 
@@ -85,6 +93,7 @@ def load(path: str | None = None) -> Config:
         embedding_model=raw.get("embedding_model", "BAAI/bge-m3"),
         embedding_dim=int(raw.get("embedding_dim", DEFAULT_EMBED_DIM)),
         chunk=chunk,
+        parse=parse,
         qdrant=qdrant,
         ingest=ingest,
         subjects=subjects,
