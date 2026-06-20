@@ -1,0 +1,19 @@
+# Eval-only image for the ONNX/INT8 embed experiment. NOT a fleet app, never pushed.
+#
+# Built FROM the existing ingest-worker:latest so it reuses the heavy docling/torch
+# layers; it just reinstalls the package (to pick up embed_onnx.py, which postdates
+# :latest) with the onnx+export extras, and adds the tools/ dir (the runtime image
+# only ships src/). Build on vhost2:
+#     sudo docker build -f Dockerfile.onnx -t ingest-worker:onnx .
+ARG BASE_IMAGE=docker.io/library/ingest-worker:latest
+FROM ${BASE_IMAGE}
+
+WORKDIR /app
+COPY pyproject.toml ./
+COPY src ./src
+COPY tools ./tools
+# onnxruntime + optimum/onnx; docling/torch are already satisfied by the base layer.
+RUN pip install --no-cache-dir '.[onnx,export]'
+
+# Default to a shell; the orchestrator drives specific tools via --entrypoint python.
+ENTRYPOINT ["bash"]
