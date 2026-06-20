@@ -9,10 +9,17 @@ requires-python = ">=3.11"
 # Verify library APIs (Docling chunker, FlagEmbedding encode kwargs, qdrant-client
 # sparse-vector model) against THESE versions before bumping.
 dependencies = [
-    "docling==2.15.1",            # PDF/HTML/DOCX -> structure-aware chunks
-    "FlagEmbedding==1.3.3",       # BGE-M3 dense+sparse in one model
-    "torch==2.5.1",               # CPU; FlagEmbedding backend
-    "qdrant-client==1.12.1",      # named dense vector + sparse vector
+    # The docling stack must be pinned as a SET: docling 2.15.1 imports APIs that
+    # newer docling-core moved/removed. These are the versions contemporaneous with
+    # docling 2.15.1 (all from ~2025-01-10); leaving them open lets pip pull
+    # incompatible later releases (e.g. docling-core dropping legacy_doc BoundingBox).
+    "docling==2.15.1",                  # PDF/HTML/DOCX -> structure-aware chunks
+    "docling-core[chunking]==2.14.0",   # chunker (HybridChunker); 2.15.1's match
+    "docling-ibm-models==3.1.2",        # layout/OCR models loader
+    "docling-parse==3.0.0",             # PDF backend
+    "FlagEmbedding==1.3.3",             # BGE-M3 dense+sparse in one model
+    "torch==2.5.1",                     # CPU; FlagEmbedding backend
+    "qdrant-client==1.12.1",            # named dense vector + sparse vector
     "PyYAML==6.0.2",
 ]
 

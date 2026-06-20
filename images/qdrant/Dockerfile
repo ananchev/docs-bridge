@@ -39,6 +39,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /qdrant
 COPY --from=builder /src/target/release/qdrant /qdrant/qdrant
 COPY --from=builder /src/config /qdrant/config
+# Bind all interfaces inside the container. Without this, Qdrant falls back to
+# config/development.yaml (RUN_MODE unset) which binds 127.0.0.1 — unreachable via
+# published ports / the container network. The official image sets RUN_MODE=production.
+ENV QDRANT__SERVICE__HOST=0.0.0.0
 # storage (./storage) and snapshots (./snapshots) are bind-mounted at runtime;
 # their defaults live in config/config.yaml. Matches the official image layout.
 EXPOSE 6333 6334
