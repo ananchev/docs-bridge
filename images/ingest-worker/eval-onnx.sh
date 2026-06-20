@@ -10,11 +10,12 @@
 #   build     build ingest-worker:onnx (FROM :latest + onnx/export extras + tools/)
 #   convert   export official BAAI/bge-m3 -> ONNX + INT8 into the model cache
 #   gate1     vector parity vs FlagEmbedding (HALTS the script if fp32 conversion wrong)
+#   probe     time fp32 vs INT8 on a small sample (pick the model to populate with)
 #   populate  re-embed aig -> aig_onnx with the INT8 model (also = embed-speed A/B)
 #   gate2     retrieval parity: does aig_onnx return the same chunks as aig?
 #   all       build -> convert -> gate1 -> populate -> gate2
 #
-# Usage:  sudo ./eval-onnx.sh all      (or: build | convert | gate1 | populate | gate2)
+# Usage:  sudo ./eval-onnx.sh all   (or: build|convert|gate1|probe|populate|gate2)
 set -euo pipefail
 
 STAGE="${1:-all}"
@@ -30,7 +31,9 @@ NET=docs-bridge-net
 MODEL=/data/cache/bge-m3-onnx                        # container path (cache is mounted)
 SUBJECT=aig
 CAND=aig_onnx
+PROBE=aig_probe                                      # throwaway collection for speed probe
 N_PARITY=200
+N_PROBE=384
 N_RETRIEVAL=100
 K=10
 
@@ -66,6 +69,19 @@ do_gate1() {
     --model-dir "$MODEL" --n "$N_PARITY"
 }
 
+do_probe() {
+  banner "SPEED PROBE — fp32 vs INT8 on $N_PROBE chunks (vs torch 1.554 s/chunk)"
+  echo "--- ONNX fp32 ---"
+  dr tools/reembed_to_collection.py --config /config/config.yaml \
+    --source "$SUBJECT" --target "$PROBE" --model-dir "$MODEL" \
+    --fresh --limit "$N_PROBE"
+  echo "--- ONNX INT8 ---"
+  dr tools/reembed_to_collection.py --config /config/config.yaml \
+    --source "$SUBJECT" --target "$PROBE" --model-dir "$MODEL" --int8 \
+    --fresh --limit "$N_PROBE"
+  echo "(read the two DONE s/chunk lines vs torch's 1.554 s/chunk)"
+}
+
 do_populate() {
   banner "POPULATE $CAND with INT8 (= embed-speed A/B vs 1.64 s/chunk)"
   time dr tools/reembed_to_collection.py \
@@ -84,6 +100,7 @@ case "$STAGE" in
   build)    do_build ;;
   convert)  do_convert ;;
   gate1)    do_gate1 ;;
+  probe)    do_probe ;;
   populate) do_populate ;;
   gate2)    do_gate2 ;;
   all)
@@ -94,5 +111,5 @@ case "$STAGE" in
     do_gate2
     banner "EVAL COMPLETE — read Gate 1 + Gate 2 + the populate s/chunk together"
     ;;
-  *) echo "unknown stage '$STAGE' (build|convert|gate1|populate|gate2|all)"; exit 2 ;;
+  *) echo "unknown stage '$STAGE' (build|convert|gate1|probe|populate|gate2|all)"; exit 2 ;;
 esac

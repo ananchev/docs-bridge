@@ -42,6 +42,8 @@ def main() -> int:
     ap.add_argument("--int8", action="store_true", help="use the INT8 model (else fp32)")
     ap.add_argument("--batch", type=int, default=64)
     ap.add_argument("--fresh", action="store_true", help="drop target first")
+    ap.add_argument("--limit", type=int, default=0,
+                    help="stop after ~N chunks (speed probe); 0 = whole collection")
     args = ap.parse_args()
 
     cfg = config.load(args.config)
@@ -72,7 +74,8 @@ def main() -> int:
         print(f"  {done}  {dt/done:.3f}s/chunk  elapsed={dt:.0f}s", flush=True)
         buf.clear()
 
-    while True:
+    stop = False
+    while not stop:
         points, offset = client.scroll(
             collection_name=src, limit=256, offset=offset,
             with_payload=True, with_vectors=False,
@@ -83,6 +86,9 @@ def main() -> int:
             buf.append(_chunk_from_payload(p.payload))
             if len(buf) >= args.batch:
                 flush()
+                if args.limit and done >= args.limit:
+                    stop = True
+                    break
         if offset is None:
             break
     flush()
