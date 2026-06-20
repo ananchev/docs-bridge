@@ -32,6 +32,7 @@ import shutil
 import numpy as np
 
 MODEL_ID = "BAAI/bge-m3"
+OPSET = 17
 
 
 def main() -> int:
@@ -44,13 +45,18 @@ def main() -> int:
     os.makedirs(args.out, exist_ok=True)
 
     # 1. Export the XLM-R encoder to ONNX (Optimum handles dynamic axes + opset).
+    #    Use the export-only entry point from optimum[exporters]; the ORTModel*
+    #    classes live in optimum.onnxruntime, a separate integration we don't install.
     print(f"[1/4] exporting {MODEL_ID}@{args.revision} encoder -> ONNX ...")
-    from optimum.onnxruntime import ORTModelForFeatureExtraction
+    from optimum.exporters.onnx import main_export
 
-    model = ORTModelForFeatureExtraction.from_pretrained(
-        MODEL_ID, revision=args.revision, export=True
+    main_export(
+        model_name_or_path=MODEL_ID,
+        output=args.out,            # writes model.onnx + tokenizer.json + config.json
+        task="feature-extraction",  # encoder -> last_hidden_state (no pooling head)
+        revision=args.revision,
+        opset=OPSET,
     )
-    model.save_pretrained(args.out)  # writes model.onnx + tokenizer.json + config.json
 
     # 2. Pull the real sparse head (Linear 1024->1) and store it as numpy.
     print("[2/4] extracting sparse_linear head ...")
@@ -90,6 +96,7 @@ def main() -> int:
         {
             "model_id": MODEL_ID,
             "revision": args.revision,
+            "opset": OPSET,
             "dense": "cls+l2norm",
             "sparse": "relu(linear) max-pooled per token id, specials dropped",
             "quantized": bool(args.quantize),
