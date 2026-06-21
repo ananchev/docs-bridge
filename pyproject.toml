@@ -37,11 +37,12 @@ ingest = [
 
 # docs-bridge server image: the MCP + REST surface. No torch/Docling at RUNTIME —
 # query embedding + rerank go through onnxruntime against the baked INT8 models.
-# NOTE: fastmcp/uvicorn pins are PROVISIONAL — lock exact versions after the Pi
-# validation confirms the http_app() mounting + tool API used in server.py.
+# Pins validated by a local py3.11 framework smoke (2026-06-21): build_app mounts
+# mcp.http_app(path="/mcp") + .lifespan, the bearer gate enforces 401 on REST+MCP,
+# and tools/list returns [list_subjects, search] over HTTP. Re-confirm on the Pi.
 server = [
-    "fastmcp>=2.3,<3",                  # MCP server (streamable-http) + @mcp.tool
-    "uvicorn[standard]>=0.30",          # ASGI server for MCP + REST mirror
+    "fastmcp==2.14.7",                  # MCP server (streamable-http) + @mcp.tool
+    "uvicorn[standard]==0.49.0",        # ASGI server for MCP + REST mirror
 ]
 
 # Build-time only (exporter Dockerfile stages): torch+transformers come from
