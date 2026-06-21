@@ -60,6 +60,12 @@ class Config:
     subjects: list[Subject]
     manifest_path: str
     suffixes: set[str] = field(default_factory=lambda: set(SUPPORTED_SUFFIXES))
+    # Embedding backend (design: ONNX/INT8 validated 2026-06-21 as the default —
+    # 4.5x faster than FlagEmbedding/torch, retrieval quality on par). The INT8 model
+    # is baked into the image at onnx_model_dir; "flagembedding" stays as a fallback.
+    embedding_backend: str = "onnx"        # "onnx" | "flagembedding"
+    embedding_int8: bool = True            # onnx only: model.int8.onnx vs model.onnx
+    onnx_model_dir: str = "/opt/bge-m3-onnx"
 
     def subject(self, name: str) -> Subject:
         for s in self.subjects:
@@ -99,4 +105,7 @@ def load(path: str | None = None) -> Config:
         subjects=subjects,
         manifest_path=raw.get("manifest_path", "/data/state/manifest.sqlite"),
         suffixes=suffixes,
+        embedding_backend=raw.get("embedding_backend", "onnx"),
+        embedding_int8=bool(raw.get("embedding_int8", True)),
+        onnx_model_dir=raw.get("onnx_model_dir", "/opt/bge-m3-onnx"),
     )

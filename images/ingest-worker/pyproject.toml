@@ -17,20 +17,20 @@ dependencies = [
     "docling-core[chunking]==2.14.0",   # chunker (HybridChunker); 2.15.1's match
     "docling-ibm-models==3.1.2",        # layout/OCR models loader
     "docling-parse==3.0.0",             # PDF backend
-    "FlagEmbedding==1.3.3",             # BGE-M3 dense+sparse in one model
-    "torch==2.5.1",                     # CPU; FlagEmbedding backend
+    "FlagEmbedding==1.3.3",             # BGE-M3 dense+sparse (fallback backend)
+    "torch==2.5.1",                     # CPU; Docling + FlagEmbedding backend
+    "onnxruntime==1.20.1",              # default embed backend (ONNX/INT8, design)
     "qdrant-client==1.12.1",            # named dense vector + sparse vector
     "PyYAML==6.0.2",
 ]
 
-# Optional backends/tooling. The base install is unchanged (FlagEmbedding/torch is
-# the validated default). `onnx` adds the ONNX Runtime embed backend; `tokenizers`
-# already ships transitively via FlagEmbedding/transformers. `export` is build-time
-# only (tools/export_bge_m3_onnx.py) and never installed into the runtime image.
+# onnxruntime is now a base dep (it's the default backend). `tokenizers` ships
+# transitively via FlagEmbedding/transformers. `export` is build-time only
+# (tools/export_bge_m3_onnx.py) — used by the Dockerfile's exporter stage and the
+# eval image to write the INT8 model; never needed in the running container.
 [project.optional-dependencies]
-onnx = ["onnxruntime==1.20.1"]
-# Export uses torch.onnx (torch+transformers come from the base image); we only need
-# the onnx package here so onnxruntime.quantization can write the INT8 model.
+# Export uses torch.onnx (torch+transformers are base deps); we only need the onnx
+# package here so onnxruntime.quantization can write the INT8 model.
 export = ["onnx>=1.17"]
 
 [project.scripts]

@@ -13,8 +13,36 @@ return_dense=True, return_sparse=True)` returns a dict with `dense_vecs`
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from .config import Config
 
 log = logging.getLogger(__name__)
+
+
+class EmbedderProto(Protocol):
+    """Both backends expose the same encode contract; the factory returns either."""
+
+    def encode(self, texts: list[str]) -> tuple[list[list[float]], list["SparseVec"]]:
+        ...
+
+
+def get_embedder(cfg: "Config") -> EmbedderProto:
+    """Select the embedding backend from config. ONNX/INT8 is the validated default
+    (2026-06-21); "flagembedding" is the torch fallback. Imports are lazy so only the
+    chosen backend's heavy deps (onnxruntime vs FlagEmbedding/torch) get loaded.
+    """
+    backend = getattr(cfg, "embedding_backend", "onnx")
+    if backend == "onnx":
+        from .embed_onnx import OnnxEmbedder
+
+        return OnnxEmbedder(cfg.onnx_model_dir, use_int8=cfg.embedding_int8)
+    if backend == "flagembedding":
+        return Embedder(cfg.embedding_model)
+    raise ValueError(
+        f"unknown embedding_backend {backend!r} (expected 'onnx' or 'flagembedding')"
+    )
 
 
 class SparseVec:

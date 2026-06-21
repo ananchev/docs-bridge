@@ -21,7 +21,7 @@ from pathlib import Path
 
 from . import qdrant_io
 from .config import Config
-from .embed import Embedder
+from .embed import get_embedder
 from .manifest import Manifest
 from .models import DocState, Subject, SyncStats
 from .parse import Parser, file_hash, scan
@@ -99,7 +99,7 @@ def sync_subject(
 
     staged = manifest.count_staged(subject.name)
     if staged:
-        embedder = Embedder(cfg.embedding_model)
+        embedder = get_embedder(cfg)
         for batch in manifest.iter_staged_batches(subject.name, cfg.ingest.batch_size):
             dense, sparse = embedder.encode([c.text for c in batch])
             qdrant_io.upsert(client, subject.collection, batch, dense, sparse)

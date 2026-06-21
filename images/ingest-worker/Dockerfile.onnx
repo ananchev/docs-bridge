@@ -12,8 +12,9 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY src ./src
 COPY tools ./tools
-# onnxruntime + optimum/onnx; docling/torch are already satisfied by the base layer.
-RUN pip install --no-cache-dir '.[onnx,export]'
+# onnxruntime is a base dep now; add the build-time `export` extra (onnx) for the
+# conversion tool. docling/torch are already satisfied by the base layer.
+RUN pip install --no-cache-dir '.[export]'
 
 # Default to a shell; the orchestrator drives specific tools via --entrypoint python.
 ENTRYPOINT ["bash"]
