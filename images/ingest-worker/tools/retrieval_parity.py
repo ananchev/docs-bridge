@@ -102,6 +102,15 @@ def main() -> int:
                   for i in range(len(texts))]
     qd, qs = (flag.encode(extra_q) if extra_q else ([], []))
     ref_q_dense = [_dense_topk(client, ref_col, qd[i], args.k, None) for i in range(len(extra_q))]
+    # CONTROL self-match: torch query of a chunk finds itself at rank 1 in the torch
+    # `aig` index. Same 20 probes / same logic as the ONNX self-match below, so the two
+    # are directly comparable. If this is also ~15/20, the imperfection is the corpus +
+    # Qdrant scalar quant (shared by both backends), NOT INT8 embedding loss.
+    ref_self_hits = 0
+    for i in range(min(20, len(texts))):
+        top = _dense_topk(client, ref_col, fd[i], 1, None)
+        if top and top[0] == chunk_ids[i]:
+            ref_self_hits += 1
     del flag
     gc.collect()
 
@@ -140,7 +149,9 @@ def main() -> int:
           f"{'PASS' if s_ov >= SPARSE_OVERLAP_OK else 'WARN'} (>= {SPARSE_OVERLAP_OK})")
     if extra_q:
         print(f"  real-question dense overlap@{args.k}: {q_ov:.3f}")
-    print(f"  self-match (ONNX chunk -> rank1 in cand): {self_hits}/20")
+    print(f"  self-match (ONNX  chunk -> rank1 in cand): {self_hits}/20")
+    print(f"  self-match (torch chunk -> rank1 in ref ): {ref_self_hits}/20  "
+          f"<- CONTROL: if ~= the ONNX line, 15/20 is corpus+Qdrant, not INT8")
     return 0
 
 
