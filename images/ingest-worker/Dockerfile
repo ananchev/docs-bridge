@@ -38,7 +38,12 @@ RUN pip install --no-cache-dir .
 FROM base AS exporter
 COPY tools ./tools
 RUN pip install --no-cache-dir '.[export]'
-RUN python tools/export_bge_m3_onnx.py --out /opt/bge-m3-onnx --quantize
+# Two separate RUNs on purpose: the torch export (~2.3GB resident) and the INT8
+# quantize (loads the 2.3GB fp32 ONNX) must NOT peak at the same time, or the 8GB
+# Pi OOM-kills the build (exit 137). Splitting into two processes keeps each peak
+# well under 8GB; the M2 (16GB) is unaffected. Output is byte-identical either way.
+RUN python tools/export_bge_m3_onnx.py --out /opt/bge-m3-onnx
+RUN python tools/export_bge_m3_onnx.py --out /opt/bge-m3-onnx --quantize-only
 
 # --- runtime: base + ONLY the INT8 runtime files -----------------------------
 # Copy the four files OnnxEmbedder actually loads. We do NOT copy the whole dir:

@@ -35,14 +35,56 @@ MODEL_ID = "BAAI/bge-m3"
 OPSET = 17
 
 
+def _quantize(out_dir: str) -> None:
+    """Dynamic INT8 of the encoder only. No torch import, so this can run as its own
+    process where torch's ~2.3GB bge-m3 model is not resident alongside the fp32 ONNX
+    being loaded for quantization -- that combined peak OOM-killed the 8GB Pi."""
+    from onnxruntime.quantization import QuantType, quantize_dynamic
+
+    print("[quantize] encoder -> INT8 ...")
+    quantize_dynamic(
+        os.path.join(out_dir, "model.onnx"),
+        os.path.join(out_dir, "model.int8.onnx"),
+        weight_type=QuantType.QInt8,
+    )
+
+
+def _write_meta(out_dir: str, revision: str, quantized: bool) -> None:
+    print("[meta] writing meta.json ...")
+    json.dump(
+        {
+            "model_id": MODEL_ID,
+            "revision": revision,
+            "opset": OPSET,
+            "dense": "cls+l2norm",
+            "sparse": "relu(linear) max-pooled per token id, specials dropped",
+            "quantized": quantized,
+        },
+        open(os.path.join(out_dir, "meta.json"), "w"),
+        indent=2,
+    )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", required=True, help="output model dir")
     ap.add_argument("--revision", default="main", help="HF revision/commit to pin")
-    ap.add_argument("--quantize", action="store_true", help="also write model.int8.onnx")
+    ap.add_argument("--quantize", action="store_true",
+                    help="also write model.int8.onnx in THIS process (fine on >=16GB hosts)")
+    ap.add_argument("--quantize-only", action="store_true",
+                    help="ONLY quantize an existing model.onnx, no torch export. Run as a "
+                         "SEPARATE process after a plain export so the quantize never shares "
+                         "RAM with torch -- required to fit the 8GB Pi (see Dockerfile).")
     args = ap.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
+
+    # Torch-free quantize path: assumes a prior `--out <dir>` export wrote model.onnx.
+    if args.quantize_only:
+        _quantize(args.out)
+        _write_meta(args.out, args.revision, quantized=True)
+        print(f"done (quantize-only) -> {args.out}")
+        return 0
 
     # 1. Export the XLM-R encoder to ONNX with torch.onnx directly (no optimum).
     #    optimum keeps relocating its onnx exporter between releases/extras, so we use
@@ -105,32 +147,21 @@ def main() -> int:
 
         shutil.copy(_dl(MODEL_ID, "tokenizer.json", revision=args.revision), tok)
 
+    # Release the torch model before any in-process quantize so its ~2.3GB does not
+    # stack on top of the fp32 ONNX load. (On small hosts, prefer two processes:
+    # a plain export then a separate `--quantize-only` -- see the Dockerfile.)
+    del model, tok, enc, sd
+    import gc
+
+    gc.collect()
+
     # 4. Optional dynamic INT8 quantization of the encoder only.
     if args.quantize:
-        print("[3/4] quantizing encoder -> INT8 ...")
-        from onnxruntime.quantization import QuantType, quantize_dynamic
-
-        quantize_dynamic(
-            os.path.join(args.out, "model.onnx"),
-            os.path.join(args.out, "model.int8.onnx"),
-            weight_type=QuantType.QInt8,
-        )
+        _quantize(args.out)
     else:
-        print("[3/4] skipping INT8 (no --quantize)")
+        print("[quantize] skipping INT8 (no --quantize)")
 
-    print("[4/4] writing meta.json ...")
-    json.dump(
-        {
-            "model_id": MODEL_ID,
-            "revision": args.revision,
-            "opset": OPSET,
-            "dense": "cls+l2norm",
-            "sparse": "relu(linear) max-pooled per token id, specials dropped",
-            "quantized": bool(args.quantize),
-        },
-        open(os.path.join(args.out, "meta.json"), "w"),
-        indent=2,
-    )
+    _write_meta(args.out, args.revision, quantized=args.quantize)
     print(f"done -> {args.out}")
     return 0
 
