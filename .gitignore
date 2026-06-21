@@ -33,3 +33,6 @@ venv/
 *.swp
 .idea/
 .vscode/
+
+# Python build artifacts
+*.egg-info/
