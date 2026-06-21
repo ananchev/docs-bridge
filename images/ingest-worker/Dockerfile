@@ -32,18 +32,25 @@ COPY src ./src
 RUN pip install --no-cache-dir .
 
 # --- exporter: build-time self-export of the INT8 ONNX model -----------------
-# Discarded stage: pulls BAAI/bge-m3 once (network at build), exports the encoder
-# with torch.onnx + dynamic INT8, then drops the fp32 model.onnx. None of the
-# build-time download or the fp32 graph reaches the final image.
+# Discarded stage: pulls BAAI/bge-m3 once (network at build) and exports the encoder
+# with torch.onnx + dynamic INT8. Nothing from this stage reaches the final image
+# except the four INT8 files copied below.
 FROM base AS exporter
 COPY tools ./tools
 RUN pip install --no-cache-dir '.[export]'
-RUN python tools/export_bge_m3_onnx.py --out /opt/bge-m3-onnx --quantize \
-    && rm -f /opt/bge-m3-onnx/model.onnx
+RUN python tools/export_bge_m3_onnx.py --out /opt/bge-m3-onnx --quantize
 
-# --- runtime: base + the baked INT8 model ------------------------------------
+# --- runtime: base + ONLY the INT8 runtime files -----------------------------
+# Copy the four files OnnxEmbedder actually loads. We do NOT copy the whole dir:
+# the fp32 model.onnx is >2GB so ONNX export writes its weights to a separate
+# external-data blob, and a plain `rm model.onnx` would leave that ~2.2GB blob
+# behind (it bloated the image to 4.9GB). model.int8.onnx is <2GB = self-contained.
 FROM base AS runtime
-COPY --from=exporter /opt/bge-m3-onnx /opt/bge-m3-onnx
+COPY --from=exporter /opt/bge-m3-onnx/model.int8.onnx \
+                     /opt/bge-m3-onnx/sparse_linear.npz \
+                     /opt/bge-m3-onnx/tokenizer.json \
+                     /opt/bge-m3-onnx/meta.json \
+                     /opt/bge-m3-onnx/
 
 # Args are the CLI: e.g. `docker run ... ingest-worker sync --subject all`
 ENTRYPOINT ["ingest"]
