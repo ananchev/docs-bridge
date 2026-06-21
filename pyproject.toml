@@ -15,9 +15,11 @@ requires-python = ">=3.11"
 dependencies = [
     "numpy>=1.26,<2",                   # <2: docling/FlagEmbedding stack expects it
     "onnxruntime==1.20.1",              # the INT8 embed + rerank runtime
-    "tokenizers==0.20.3",               # MUST match what ingest tokenized with, or
-                                        # query vectors drift from doc vectors. In
-                                        # range for transformers 4.44-4.46 (FlagEmbedding 1.3.3).
+    "tokenizers==0.19.1",               # MUST match what ingest tokenized with, or
+                                        # query vectors drift from doc vectors. The
+                                        # docling/FlagEmbedding set pins transformers
+                                        # 4.44.2 (tokenizers <0.20,>=0.19), so the
+                                        # validated INT8 ingest used 0.19.1 — match it.
     "qdrant-client==1.12.1",            # named dense vector + sparse vector
     "PyYAML==6.0.2",
 ]
