@@ -29,9 +29,9 @@ import gc
 import numpy as np
 from qdrant_client import models as qm
 
-from ingest_worker import config, qdrant_io
-from ingest_worker.embed import Embedder
-from ingest_worker.embed_onnx import OnnxEmbedder
+from docs_bridge import config, qdrant_io
+from docs_bridge.embed import Embedder
+from docs_bridge.embed_onnx import OnnxEmbedder
 
 DENSE_OVERLAP_OK = 0.70
 SPARSE_OVERLAP_OK = 0.60

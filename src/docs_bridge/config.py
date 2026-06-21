@@ -50,6 +50,26 @@ class IngestCfg:
 
 
 @dataclass
+class RerankCfg:
+    """docs-bridge server only. BGE-reranker-v2-m3 as ONNX/INT8 (built on the M2,
+    baked into the server image — the 8GB Pi can't quantize, only run)."""
+    enabled: bool = True
+    model_dir: str = "/opt/bge-reranker-onnx"
+    int8: bool = True
+    max_length: int = 512          # cross-encoder truncates (query, passage) pairs
+    top_n: int = 30                # rerank this many fused candidates, then cut to k
+
+
+@dataclass
+class ServerCfg:
+    """docs-bridge server only (ignored by the ingest-worker)."""
+    host: str = "0.0.0.0"
+    port: int = 8080
+    default_k: int = 6             # design §9: search(..., k=6)
+    prefetch_limit: int = 50       # per branch (dense / sparse) before RRF fusion
+
+
+@dataclass
 class Config:
     embedding_model: str
     embedding_dim: int
@@ -66,6 +86,8 @@ class Config:
     embedding_backend: str = "onnx"        # "onnx" | "flagembedding"
     embedding_int8: bool = True            # onnx only: model.int8.onnx vs model.onnx
     onnx_model_dir: str = "/opt/bge-m3-onnx"
+    rerank: RerankCfg = field(default_factory=RerankCfg)    # server only
+    server: ServerCfg = field(default_factory=ServerCfg)    # server only
 
     def subject(self, name: str) -> Subject:
         for s in self.subjects:
@@ -84,6 +106,8 @@ def load(path: str | None = None) -> Config:
     parse = ParseCfg(**(raw.get("parse") or {}))
     qdrant = QdrantCfg(**(raw.get("qdrant") or {}))
     ingest = IngestCfg(**(raw.get("ingest") or {}))
+    rerank = RerankCfg(**(raw.get("rerank") or {}))
+    server = ServerCfg(**(raw.get("server") or {}))
 
     subjects = [
         Subject(name=s["name"], dir=s["dir"], collection=s["collection"])
@@ -108,4 +132,6 @@ def load(path: str | None = None) -> Config:
         embedding_backend=raw.get("embedding_backend", "onnx"),
         embedding_int8=bool(raw.get("embedding_int8", True)),
         onnx_model_dir=raw.get("onnx_model_dir", "/opt/bge-m3-onnx"),
+        rerank=rerank,
+        server=server,
     )

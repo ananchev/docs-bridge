@@ -19,9 +19,9 @@ from __future__ import annotations
 import argparse
 import time
 
-from ingest_worker import config, qdrant_io
-from ingest_worker.embed_onnx import OnnxEmbedder
-from ingest_worker.models import Chunk
+from docs_bridge import config, qdrant_io
+from docs_bridge.embed_onnx import OnnxEmbedder
+from docs_bridge.models import Chunk
 
 _FIELDS = (
     "doc_id", "subject", "source_path", "chunk_index",

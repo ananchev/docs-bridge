@@ -3,7 +3,7 @@
 One-time, offline BUILD step (not part of the runtime image). Reproducible and
 self-sourced: it pulls the official weights from HF, exports the XLM-R encoder to
 ONNX via Optimum, extracts the real sparse head, and (optionally) makes an INT8
-copy. The output dir is what ingest_worker.embed_onnx.OnnxEmbedder loads.
+copy. The output dir is what docs_bridge.embed_onnx.OnnxEmbedder loads.
 
 Run (on a host with torch+transformers available, e.g. after the benchmark frees RAM):
     pip install onnx onnxruntime          # torch+transformers come from the base image

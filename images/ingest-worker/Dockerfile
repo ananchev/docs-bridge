@@ -1,7 +1,12 @@
 # ingest-worker — two-pass Docling -> BGE-M3 -> Qdrant ingestion.
 #
+# Build CONTEXT is the repo root (the docs_bridge package + tools/ are shared with
+# the docs-bridge server image), so build with:
+#     docker build -f images/ingest-worker/Dockerfile -t ingest-worker:latest .
+#
 # Both target hosts (Pi 5 Rocky 10, M2 Asahi Fedora) are aarch64 Linux, so this
-# builds once and runs on both — no multi-arch (design §1). Build on the Pi first.
+# builds once and runs on both — no multi-arch (design §1). Build on the M2 (16GB)
+# and distribute: the 8GB Pi cannot run the INT8 quantize step (OOM).
 #
 # Multi-stage: the default embed backend is ONNX/INT8 (validated 2026-06-21, 4.5x
 # faster than FlagEmbedding/torch at on-par retrieval quality). The `exporter` stage
@@ -29,15 +34,17 @@ ENV HOME=/data/cache \
 WORKDIR /app
 COPY pyproject.toml ./
 COPY src ./src
-RUN pip install --no-cache-dir .
+# .[ingest] = the shared core + Docling stack + FlagEmbedding/torch fallback.
+RUN pip install --no-cache-dir '.[ingest]'
 
 # --- exporter: build-time self-export of the INT8 ONNX model -----------------
 # Discarded stage: pulls BAAI/bge-m3 once (network at build) and exports the encoder
 # with torch.onnx + dynamic INT8. Nothing from this stage reaches the final image
-# except the four INT8 files copied below.
+# except the four INT8 files copied below. .[ingest,export] reproduces the exact
+# torch+transformers env that produced the validated INT8 model, plus onnx.
 FROM base AS exporter
 COPY tools ./tools
-RUN pip install --no-cache-dir '.[export]'
+RUN pip install --no-cache-dir '.[ingest,export]'
 # Two separate RUNs on purpose: the torch export (~2.3GB resident) and the INT8
 # quantize (loads the 2.3GB fp32 ONNX) must NOT peak at the same time, or the 8GB
 # Pi OOM-kills the build (exit 137). Splitting into two processes keeps each peak

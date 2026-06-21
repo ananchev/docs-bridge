@@ -1,0 +1,16 @@
+# Build context is the REPO ROOT for both images (ingest-worker, docs-bridge), so
+# keep it lean — the Dockerfiles only COPY pyproject.toml, src/, tools/.
+.git/
+**/__pycache__/
+**/*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.DS_Store
+*.md
+images/
+provisioning/
+application_data/
+*.sh
+config.example.yaml

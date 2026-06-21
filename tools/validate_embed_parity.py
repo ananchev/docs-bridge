@@ -23,9 +23,9 @@ import gc
 
 import numpy as np
 
-from ingest_worker import config, qdrant_io
-from ingest_worker.embed import Embedder, SparseVec
-from ingest_worker.embed_onnx import OnnxEmbedder
+from docs_bridge import config, qdrant_io
+from docs_bridge.embed import Embedder, SparseVec
+from docs_bridge.embed_onnx import OnnxEmbedder
 
 # fp32 ONNX must essentially equal torch; below this the conversion is broken.
 FP32_DENSE_MIN = 0.999

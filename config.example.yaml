@@ -1,6 +1,8 @@
-# Example ingest-worker config — the REAL one is templated by containers-at-home
-# from group_vars + vault and mounted at /config/config.yaml (design §6).
-# This file documents the shape and the Pi-vs-M2 knobs; it is NOT used at deploy.
+# Example docs-bridge config (SHARED by the ingest-worker and the docs-bridge
+# server) — the REAL one is templated by containers-at-home from group_vars + vault
+# and mounted at /config/config.yaml (design §6). Documents the shape and the
+# Pi-vs-M2 knobs; it is NOT used at deploy. The ingest-worker ignores the rerank/
+# server blocks; the server ignores the parse/ingest blocks.
 
 embedding_model: BAAI/bge-m3      # full-fidelity, no stand-in (design §1)
 embedding_dim: 1024               # BGE-M3 dense dim
@@ -25,6 +27,20 @@ ingest:
   two_pass: true
 
 manifest_path: /data/state/manifest.sqlite
+
+# --- docs-bridge SERVER only (ignored by the ingest-worker) -------------------
+rerank:
+  enabled: true
+  model_dir: /opt/bge-reranker-onnx   # baked INT8 cross-encoder (built on the M2)
+  int8: true
+  max_length: 512                     # truncates each (query, passage) pair
+  top_n: 30                           # rerank this many fused candidates, then cut to k
+
+server:
+  host: 0.0.0.0
+  port: 8080
+  default_k: 6                        # search(..., k=6) (design §9)
+  prefetch_limit: 50                  # dense / sparse candidates each before RRF fusion
 
 # N independent corpora; each its own dir + Qdrant collection (design §6).
 subjects:
