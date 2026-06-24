@@ -16,6 +16,10 @@ class Subject:
     name: str
     dir: str
     collection: str
+    # Human description of what this corpus contains (e.g. "Siemens Active
+    # Integration ..."). The single source of truth surfaced via list_subjects() and
+    # composed into the MCP server instructions so the model picks the right subject.
+    description: str = ""
 
 
 @dataclass

@@ -115,7 +115,12 @@ def load(path: str | None = None) -> Config:
     server = ServerCfg(**(raw.get("server") or {}))
 
     subjects = [
-        Subject(name=s["name"], dir=s["dir"], collection=s["collection"])
+        Subject(
+            name=s["name"],
+            dir=s["dir"],
+            collection=s["collection"],
+            description=(s.get("description") or "").strip(),
+        )
         for s in (raw.get("subjects") or [])
     ]
     if not subjects:

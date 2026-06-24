@@ -80,6 +80,7 @@ class Searcher:
             out.append(
                 {
                     "name": s.name,
+                    "description": s.description,
                     "collection": s.collection,
                     "points": points,
                     "populated": points > 0,

@@ -36,8 +36,22 @@ def build_mcp(searcher: Searcher, cfg: Config):
     the MCP tools and the REST mirror are the identical retrieve->rerank path."""
     from fastmcp import FastMCP
 
-    # instructions steer the consuming LLM (citation + language policy); see ServerCfg.
-    mcp = FastMCP(name="docs-bridge", instructions=cfg.server.instructions or None)
+    # The MCP `instructions` steer the consuming LLM. Composed from the operator's
+    # generic policy (cfg.server.instructions: grounding + citation + language) PLUS an
+    # auto-generated catalog of corpora built from the subject descriptions — so the
+    # policy text stays corpus-agnostic and a new subject appears here automatically
+    # (single source of truth = Subject.description). See ServerCfg.instructions.
+    catalog = "\n".join(
+        f"- {s.name}: {s.description}" for s in cfg.subjects if s.description
+    )
+    parts = [cfg.server.instructions.strip()]
+    if catalog:
+        parts.append(
+            "Choose the `subject` whose description best matches the question. "
+            "Available corpora:\n" + catalog
+        )
+    instructions = "\n\n".join(p for p in parts if p) or None
+    mcp = FastMCP(name="docs-bridge", instructions=instructions)
 
     @mcp.tool
     def list_subjects() -> list[dict]:
