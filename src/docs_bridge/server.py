@@ -36,7 +36,8 @@ def build_mcp(searcher: Searcher, cfg: Config):
     the MCP tools and the REST mirror are the identical retrieve->rerank path."""
     from fastmcp import FastMCP
 
-    mcp = FastMCP(name="docs-bridge")
+    # instructions steer the consuming LLM (citation + language policy); see ServerCfg.
+    mcp = FastMCP(name="docs-bridge", instructions=cfg.server.instructions or None)
 
     @mcp.tool
     def list_subjects() -> list[dict]:

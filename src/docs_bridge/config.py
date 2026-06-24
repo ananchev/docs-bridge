@@ -67,6 +67,11 @@ class ServerCfg:
     port: int = 8080
     default_k: int = 6             # design §9: search(..., k=6)
     prefetch_limit: int = 50       # per branch (dense / sparse) before RRF fusion
+    # MCP server `instructions` (returned in the initialize handshake). Clients (e.g.
+    # LibreChat) inject this into the model's context to steer how the tools' results
+    # are used — citation + answer-language policy. Config-driven so it's tunable via
+    # the mounted config.yaml (re-render + restart) without rebuilding the image.
+    instructions: str = ""
 
 
 @dataclass
