@@ -58,6 +58,12 @@ class RerankCfg:
     int8: bool = True
     max_length: int = 512          # cross-encoder truncates (query, passage) pairs
     top_n: int = 30                # rerank this many fused candidates, then cut to k
+    # Total candidate budget when a search spans MULTIPLE pools (subject=list|"all").
+    # Candidates are gathered across the named collections and capped at this many
+    # before rerank, so latency stays bounded regardless of pool count (rerank is the
+    # cost). Bigger than top_n so cross-pool hits aren't squeezed out; single-pool
+    # search still uses top_n unchanged.
+    multi_top_n: int = 60
 
 
 @dataclass

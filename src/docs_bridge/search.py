@@ -88,52 +88,97 @@ class Searcher:
             )
         return out
 
-    def search(self, subject: str, query: str, k: int | None = None) -> list[dict]:
+    def search(
+        self, subject: "str | list[str]", query: str, k: int | None = None
+    ) -> list[dict]:
         k = k or self.cfg.server.default_k
-        collection = self.cfg.subject(subject).collection  # raises on unknown subject
-        if not self.client.collection_exists(collection):
-            log.warning("collection %s does not exist yet (subject %s)", collection, subject)
-            return []
+        subjects = self._resolve_subjects(subject)   # raises on an unknown name
+        multi = len(subjects) > 1
+        # Total candidates handed to the (slow) reranker. Single pool -> top_n
+        # (unchanged); spanning pools -> the larger multi_top_n so cross-pool hits
+        # aren't squeezed out. Bounded regardless of pool count (rerank is the cost).
+        budget = self.cfg.rerank.multi_top_n if multi else self.cfg.rerank.top_n
 
         dense_list, sparse_list = self.embedder.encode([query])
         dense, sparse = dense_list[0], sparse_list[0]
 
-        res = self.client.query_points(
-            collection_name=collection,
-            prefetch=[
-                qm.Prefetch(query=dense, using=DENSE, limit=self.cfg.server.prefetch_limit),
-                qm.Prefetch(
-                    query=qm.SparseVector(indices=sparse.indices, values=sparse.values),
-                    using=SPARSE,
-                    limit=self.cfg.server.prefetch_limit,
-                ),
-            ],
-            query=qm.FusionQuery(fusion=qm.Fusion.RRF),
-            limit=self.cfg.rerank.top_n,
-            with_payload=True,
-        )
-        points = res.points
-        if not points:
+        # One RRF retrieval per existing collection; keep each candidate paired with
+        # its subject so results stay attributable.
+        per_subject: list[list[tuple[object, str]]] = []
+        for s in subjects:
+            if not self.client.collection_exists(s.collection):
+                log.warning("collection %s missing (subject %s); skipped", s.collection, s.name)
+                continue
+            res = self.client.query_points(
+                collection_name=s.collection,
+                prefetch=[
+                    qm.Prefetch(query=dense, using=DENSE, limit=self.cfg.server.prefetch_limit),
+                    qm.Prefetch(
+                        query=qm.SparseVector(indices=sparse.indices, values=sparse.values),
+                        using=SPARSE,
+                        limit=self.cfg.server.prefetch_limit,
+                    ),
+                ],
+                query=qm.FusionQuery(fusion=qm.Fusion.RRF),
+                limit=budget,
+                with_payload=True,
+            )
+            if res.points:
+                per_subject.append([(p, s.name) for p in res.points])
+
+        # Round-robin the per-pool RRF lists then cap at the budget: each pool's TOP
+        # candidates go in first, fairly, total <= budget. For a single pool this is
+        # just its top-`budget` in order (identical to the old single-collection path).
+        candidates = self._interleave(per_subject)[:budget]
+        if not candidates:
             return []
 
-        # Rerank the fused candidates; fall back to the fusion score if disabled.
+        # Rerank the gathered candidates GLOBALLY (cross-encoder scores are comparable
+        # across pools); fall back to the fusion score if the reranker is disabled.
         reranker = self.reranker
         if reranker is not None:
-            texts = [(p.payload or {}).get("text", "") for p in points]
+            texts = [(p.payload or {}).get("text", "") for p, _ in candidates]
             scores = reranker.score(query, texts)
-            order = sorted(range(len(points)), key=lambda i: scores[i], reverse=True)
-            ranked = [(points[i], float(scores[i])) for i in order[:k]]
+            order = sorted(range(len(candidates)), key=lambda i: scores[i], reverse=True)
+            ranked = [(candidates[i][0], candidates[i][1], float(scores[i])) for i in order[:k]]
         else:
-            ranked = [(p, float(p.score)) for p in points[:k]]
+            order = sorted(
+                range(len(candidates)),
+                key=lambda i: candidates[i][0].score or 0.0, reverse=True,
+            )
+            ranked = [
+                (candidates[i][0], candidates[i][1], float(candidates[i][0].score or 0.0))
+                for i in order[:k]
+            ]
 
-        return [self._to_result(p, score) for p, score in ranked]
+        return [self._to_result(p, subj, score) for p, subj, score in ranked]
+
+    def _resolve_subjects(self, subject: "str | list[str]") -> list:
+        """Normalize the `subject` arg into a list of Subjects. Accepts a single name,
+        a list of names, or the literal "all" (every configured subject)."""
+        if isinstance(subject, str):
+            if subject.strip().lower() == "all":
+                return list(self.cfg.subjects)
+            return [self.cfg.subject(subject)]
+        return [self.cfg.subject(name) for name in subject]
 
     @staticmethod
-    def _to_result(point, score: float) -> dict:
+    def _interleave(lists: list) -> list:
+        """Round-robin merge: lists[0][0], lists[1][0], ..., lists[0][1], lists[1][1], ..."""
+        out = []
+        for i in range(max((len(x) for x in lists), default=0)):
+            for lst in lists:
+                if i < len(lst):
+                    out.append(lst[i])
+        return out
+
+    @staticmethod
+    def _to_result(point, subject: str, score: float) -> dict:
         pl = point.payload or {}
         text = pl.get("text", "")
         return {
             "score": score,
+            "subject": subject,
             "source_path": pl.get("source_path"),
             "section": pl.get("section_path"),
             "last_updated": pl.get("last_updated"),

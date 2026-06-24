@@ -60,10 +60,17 @@ def build_mcp(searcher: Searcher, cfg: Config):
         return searcher.list_subjects()
 
     @mcp.tool
-    def search(subject: str, query: str, k: int = cfg.server.default_k) -> list[dict]:
+    def search(
+        subject: str | list[str], query: str, k: int = cfg.server.default_k
+    ) -> list[dict]:
         """Hybrid-retrieve (dense+sparse) then rerank the most relevant chunks for
-        `query` within `subject`. Returns cited chunks (source_path, section,
-        last_updated) — retrieval only, no LLM synthesis."""
+        `query`. `subject` selects the corpus/corpora: a single subject name, a LIST of
+        names to span related pools, or "all" to search every pool. Call list_subjects
+        first to see the available subjects and their descriptions (incl. which relate);
+        for a cross-cutting question, pass the several relevant subjects. Results are
+        reranked GLOBALLY across the chosen pools and each chunk is tagged with its
+        `subject`; cited (source_path, section, last_updated) — retrieval only, no
+        LLM synthesis."""
         return searcher.search(subject, query, k)
 
     return mcp
