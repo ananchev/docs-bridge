@@ -28,6 +28,14 @@ ingest:
 
 manifest_path: /data/state/manifest.sqlite
 
+# Optional file filters. Globs are matched against the doc_id (path relative to the
+# subject dir, posix); fnmatch semantics, so `*` spans `/`. These are GLOBAL defaults
+# unioned with each subject's own include/exclude. include = whitelist (if any
+# include pattern exists at either level a file must match one); exclude = blacklist
+# (exclude wins). Omit both = ingest every suffix-matched file (prior behaviour).
+# include: ["*.pdf", "*.html"]
+# exclude: ["*/draft/*"]
+
 # --- docs-bridge SERVER only (ignored by the ingest-worker) -------------------
 rerank:
   enabled: true
@@ -43,6 +51,23 @@ server:
   prefetch_limit: 50                  # dense / sparse candidates each before RRF fusion
 
 # N independent corpora; each its own dir + Qdrant collection (design §6).
+# A subject may carry its own include/exclude (unioned with the global ones above) —
+# e.g. a doxygen tree dropped in as-is, with its navigation/index pages excluded:
+#   - name: teamcenter
+#     dir: /data/docs/teamcenter
+#     collection: teamcenter
+#     exclude:                       # fnmatch globs (no brace expansion)
+#       - "api/namespacemembers*.html"   # A-Z member indexes (+ the base page)
+#       - "api/functions*.html"          # A-Z function indexes
+#       - "api/*-members.html"           # per-class redundant "Member List" pages
+#       - "api/annotated.html"
+#       - "api/hierarchy.html"
+#       - "api/files.html"
+#       - "api/namespaces.html"
+#       - "api/index.html"
+#       - "api/pages.html"
+#       - "api/dir_*.html"
+#       - "api/search*.html"
 subjects:
   - { name: teamcenter-aig, dir: /data/docs/aig, collection: aig }
   - { name: power-query,    dir: /data/docs/pq,  collection: pq }

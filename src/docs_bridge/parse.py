@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from datetime import datetime, timezone
+from fnmatch import fnmatch
 from pathlib import Path
 
 from .config import Config
@@ -37,16 +38,35 @@ def doc_id_for(subject_dir: Path, path: Path) -> str:
     return path.relative_to(subject_dir).as_posix()
 
 
+def _included(doc_id: str, include: tuple[str, ...], exclude: tuple[str, ...]) -> bool:
+    """Apply the whitelist/blacklist globs to a doc_id (posix path relative to the
+    subject dir). include is a whitelist — if any pattern is present a file must
+    match one; exclude is a blacklist and wins over include. Patterns use fnmatch,
+    so `*` spans `/`."""
+    if include and not any(fnmatch(doc_id, pat) for pat in include):
+        return False
+    if any(fnmatch(doc_id, pat) for pat in exclude):
+        return False
+    return True
+
+
 def scan(subject: Subject, cfg: Config) -> dict[str, Path]:
-    """Map doc_id -> path for every supported file under the subject dir."""
+    """Map doc_id -> path for every supported, non-filtered file under the subject
+    dir. Global (cfg) and per-subject include/exclude globs are unioned."""
     root = Path(subject.dir)
     if not root.is_dir():
         log.warning("subject %s: dir %s does not exist", subject.name, root)
         return {}
+    include = tuple(cfg.include) + subject.include
+    exclude = tuple(cfg.exclude) + subject.exclude
     found: dict[str, Path] = {}
     for p in sorted(root.rglob("*")):
-        if p.is_file() and p.suffix.lower() in cfg.suffixes:
-            found[doc_id_for(root, p)] = p
+        if not (p.is_file() and p.suffix.lower() in cfg.suffixes):
+            continue
+        doc_id = doc_id_for(root, p)
+        if not _included(doc_id, include, exclude):
+            continue
+        found[doc_id] = p
     return found
 
 

@@ -91,6 +91,12 @@ class Config:
     subjects: list[Subject]
     manifest_path: str
     suffixes: set[str] = field(default_factory=lambda: set(SUPPORTED_SUFFIXES))
+    # Global file filters (globs matched against the doc_id = path relative to the
+    # subject dir, posix). Apply to EVERY subject and are unioned with each subject's
+    # own include/exclude. include = whitelist (any include pattern at either level
+    # means a file must match one); exclude = blacklist (exclude wins). See scan().
+    include: list[str] = field(default_factory=list)
+    exclude: list[str] = field(default_factory=list)
     # Embedding backend (design: ONNX/INT8 validated 2026-06-21 as the default —
     # 4.5x faster than FlagEmbedding/torch, retrieval quality on par). The INT8 model
     # is baked into the image at onnx_model_dir; "flagembedding" stays as a fallback.
@@ -126,6 +132,8 @@ def load(path: str | None = None) -> Config:
             dir=s["dir"],
             collection=s["collection"],
             description=(s.get("description") or "").strip(),
+            include=tuple(s.get("include") or ()),
+            exclude=tuple(s.get("exclude") or ()),
         )
         for s in (raw.get("subjects") or [])
     ]
@@ -145,6 +153,8 @@ def load(path: str | None = None) -> Config:
         subjects=subjects,
         manifest_path=raw.get("manifest_path", "/data/state/manifest.sqlite"),
         suffixes=suffixes,
+        include=list(raw.get("include") or []),
+        exclude=list(raw.get("exclude") or []),
         embedding_backend=raw.get("embedding_backend", "onnx"),
         embedding_int8=bool(raw.get("embedding_int8", True)),
         onnx_model_dir=raw.get("onnx_model_dir", "/opt/bge-m3-onnx"),

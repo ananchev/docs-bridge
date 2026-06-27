@@ -20,6 +20,12 @@ class Subject:
     # Integration ..."). The single source of truth surfaced via list_subjects() and
     # composed into the MCP server instructions so the model picks the right subject.
     description: str = ""
+    # Per-subject file filters (globs matched against the doc_id = path relative to
+    # the subject dir, posix). These ADD to the global include/exclude on Config.
+    # include = whitelist (if any include pattern exists at either level, a file must
+    # match one); exclude = blacklist (exclude wins). See scan() in parse.py.
+    include: tuple[str, ...] = ()
+    exclude: tuple[str, ...] = ()
 
 
 @dataclass
