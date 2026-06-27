@@ -2,8 +2,8 @@
 
 Two-pass, hash-delta, self-updating ingestion for docs-bridge. Parses a corpus
 with **Docling**, embeds with **BGE-M3** (dense + sparse in one pass), and upserts
-into **Qdrant** — one collection per subject. See the stack design in
-[`../../docs-bridge-ansible-design.md`](../../docs-bridge-ansible-design.md) §8.
+into **Qdrant** — one collection per subject. Full walkthrough in
+[`../../docs/ingestion.md`](../../docs/ingestion.md).
 
 ## What it does
 
@@ -16,7 +16,8 @@ scan disk → diff vs SQLite manifest → classify each doc:
 ```
 
 **Two-pass** = parse-all-then-embed-all, staging chunks to SQLite in between, so
-Docling and BGE-M3 are never resident together (the 8 GB Pi budget, design §1/§8).
+Docling and BGE-M3 are never resident together (peak memory is bounded by the
+larger model stack, not their sum).
 
 ## Run
 
@@ -31,8 +32,9 @@ docker run --rm \
 docker run --rm ... ingest-worker sync --subject aig --verbose
 ```
 
-Config shape: [`config.example.yaml`](./config.example.yaml). The real config is
-templated and mounted by **containers-at-home** (design §6) — this image bakes in
+Config shape: [`../../config.example.yaml`](../../config.example.yaml), documented
+in [`../../docs/configuration.md`](../../docs/configuration.md). The real config is
+templated and mounted by the operator (deployment) repo — this image bakes in
 nothing host-specific.
 
 ## Layout
@@ -42,7 +44,7 @@ nothing host-specific.
 | `cli.py` | `sync --subject <name\|all>` |
 | `config.py` | load `/config/config.yaml` |
 | `parse.py` | pass 1 — Docling → structure-aware chunks (owns the Docling import) |
-| `embed.py` | pass 2 — BGE-M3 dense+sparse (owns the FlagEmbedding import) |
+| `embed.py` / `embed_onnx.py` | pass 2 — BGE-M3 dense+sparse; ONNX/INT8 by default, FlagEmbedding/torch fallback |
 | `manifest.py` | SQLite: persistent `docs` manifest + `staged_chunks` scratch |
 | `qdrant_io.py` | collection create, idempotent upsert, doc-scoped delete |
 | `sync.py` | hash-delta + two-pass orchestration |

@@ -2,25 +2,24 @@
 
 Qdrant built from source so it runs on **16K-page** kernels. The official
 `qdrant/qdrant` image bundles jemalloc for 4K pages and aborts with
-`<jemalloc>: Unsupported system page size` on both our targets:
-
-- **Pi 5 / Rocky 10** — boots the `+16k` BCM2712 kernel (`getconf PAGE_SIZE` = 16384).
-- **Mac mini M2 / Asahi** — Apple Silicon is natively 16K.
+`<jemalloc>: Unsupported system page size` on a 16K-page host (check with
+`getconf PAGE_SIZE` — e.g. Apple Silicon under Asahi Linux is natively 16384, and
+some ARM kernels boot a 16K page size).
 
 The fix is a single build-time env: `JEMALLOC_SYS_WITH_LG_PAGE=16`, which builds
 jemalloc for pages up to 64K — one binary works on 4K / 16K / 64K.
 
 **Memory:** Qdrant's release profile uses fat LTO, whose final link needs >8 GB
-and OOM-kills on an 8 GB host (the Pi, or an 8 GB build VM). The Dockerfile
-overrides it to thin LTO + parallel codegen units. If an 8 GB host still OOMs,
-set `CARGO_PROFILE_RELEASE_LTO=off`.
+and OOM-kills on an 8 GB build host. The Dockerfile overrides it to thin LTO +
+parallel codegen units. If an 8 GB host still OOMs, set
+`CARGO_PROFILE_RELEASE_LTO=off`.
 
 ## Build
 
 Ad-hoc on each host (no registry push — slow on the Pi, faster on the M2):
 
 ```bash
-# default (CARGO_BUILD_JOBS=2, Pi-safe)
+# default (CARGO_BUILD_JOBS=2, safe on a low-RAM build host)
 docker build -t qdrant:16k images/qdrant
 
 # faster on a roomier box
@@ -30,9 +29,8 @@ docker build -t qdrant:16k \
   images/qdrant
 ```
 
-The deploy playbook (containers-at-home) builds this in place of pulling the
-upstream image. `app_versions['docs-bridge-qdrant'].image` must point at the
-locally built tag (e.g. `qdrant:16k`).
+The operator (deployment) repo builds this in place of pulling the upstream image
+and points its Qdrant image reference at the locally built tag (e.g. `qdrant:16k`).
 
 ## Verify it runs (the whole point)
 
