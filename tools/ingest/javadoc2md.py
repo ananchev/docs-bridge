@@ -1,9 +1,17 @@
 """Javadoc-HTML -> clean Markdown preprocessor (standalone; runs OUTSIDE the product).
 
 A corpus *preprocessor*, not part of the docs_bridge package — it never imports
-docs_bridge. Sibling of doxy2md.py: it turns a published **JDK Javadoc** HTML tree
-into clean Markdown the existing ingest already accepts (`.md` is in
-config.SUPPORTED_SUFFIXES), so no change to parse/ingest is needed.
+docs_bridge. Sibling of doxy2md.py: it turns a published Javadoc HTML tree into clean
+Markdown the existing ingest already accepts (`.md` is in config.SUPPORTED_SUFFIXES),
+so no change to parse/ingest is needed.
+
+Handles BOTH Javadoc HTML generations, auto-detected per page:
+  * MODERN  (JDK 11+ "new" doclet): `<body class="class-declaration-page">`,
+            `h1.title`, `section.class-description div.type-signature`,
+            `main section.detail` / `div.member-signature`, `dl.notes`.
+  * LEGACY  (JDK 8/9/10 doclet, e.g. Teamcenter TcDoclet): `<body>` (no class),
+            `h2.title`, `div.subTitle` package, `div.description > pre`,
+            `div.details` with `<h4>` members + `<pre class="methodSignature">` + `<dl>`.
 
 Output mirrors the input tree (same relative path + basename, .html -> .md), so the
 copy step's structure mirroring (and the FQN-rooted doc ids it produces) stay intact.
@@ -17,20 +25,28 @@ Per page:
     HybridChunker turns those headings into the chunk `section_path`, so a citation
     reads e.g. "...DataService > getRecords".
 
-    python tools/ingest/javadoc2md.py <src_html_dir> <dst_md_dir>
+    python javadoc2md.py <src_html_dir> <dst_md_dir>
 
-Only the two content page types are emitted (selected by the JDK `<body class>`):
-`class-declaration-page` (classes/interfaces/enums/records) and
-`package-declaration-page` (package-summary). Every nav/index/use/tree/search/help
-page is dropped.
+Only the two content page types are emitted (class/interface/enum/record pages and
+package-summary pages). Every nav/index/use/tree/search/help page is dropped.
 """
 from __future__ import annotations
 import re, sys
 from pathlib import Path
 from bs4 import BeautifulSoup
 
-# --- which javadoc pages carry real content (selected by <body class>) -------
+# --- which MODERN javadoc pages carry real content (selected by <body class>) ----
 KEEP_BODY = {"class-declaration-page", "package-declaration-page"}
+
+# --- LEGACY title kinds (text of <h2 class="title">) -----------------------------
+LEGACY_KIND = re.compile(
+    r"^(Class|Interface|Enum|Annotation Type|Record|Record Class|Enum Class)\s+(.+)$")
+
+# notes labels to drop (navigational, not developer-relevant). Compared colon-stripped.
+DROP_NOTES = {"specified by", "overrides", "see also", "since",
+              "all implemented interfaces", "all known implementing classes",
+              "all known subinterfaces", "all superinterfaces",
+              "enclosing class", "enclosing interface", "functional interface"}
 
 # --- rendering helpers -------------------------------------------------------
 def clean(s: str) -> str:
@@ -42,13 +58,9 @@ def block_text(el) -> str:
     return clean(el.get_text(" ")) if el else ""
 
 def render_notes(dl) -> list[str]:
-    """A javadoc <dl class="notes"> holds Parameters/Returns/Throws/etc. as
-    alternating <dt>label</dt> <dd>..</dd>* runs. Keep the developer-relevant
+    """A javadoc <dl> (modern: class="notes") holds Parameters/Returns/Throws/etc.
+    as alternating <dt>label</dt> <dd>..</dd>* runs. Keep the developer-relevant
     labels; drop navigational ones (Specified by / Overrides / See Also)."""
-    DROP = {"specified by:", "overrides:", "see also:", "since:",
-            "all implemented interfaces:", "all known implementing classes:",
-            "all known subinterfaces:", "all superinterfaces:",
-            "enclosing class:", "enclosing interface:", "functional interface:"}
     out, label = [], None
     bullets: list[str] = []
 
@@ -70,7 +82,7 @@ def render_notes(dl) -> list[str]:
         if child.name == "dt":
             flush()
             label = clean(child.get_text()).rstrip(":").lower()
-        elif label and label not in DROP:
+        elif label and label not in DROP_NOTES:
             txt = clean(child.get_text(" "))
             if not txt:
                 continue
@@ -86,6 +98,7 @@ def render_notes(dl) -> list[str]:
     flush()
     return out
 
+# ======================= MODERN (JDK 11+) ====================================
 def render_member(sec) -> list[str]:
     """One <section class="detail">: heading + signature + description + notes."""
     h3 = sec.select_one("h3")
@@ -95,8 +108,6 @@ def render_member(sec) -> list[str]:
     md = [f"## {name}", ""]
     sig = sec.select_one("div.member-signature")
     if sig:
-        # no separator: javadoc uses &nbsp; where a space is wanted, so plain
-        # concatenation keeps generics/params tight ("Map<String,String[]>").
         md += ["```java", clean(sig.get_text()), "```", ""]
     desc = sec.select_one(":scope > div.block")
     body = block_text(desc)
@@ -107,21 +118,6 @@ def render_member(sec) -> list[str]:
     if md and md[-1] != "":
         md.append("")
     return md
-
-# --- one page ----------------------------------------------------------------
-def convert(html: str) -> str | None:
-    soup = BeautifulSoup(html, "lxml")
-    body = soup.find("body")
-    if not body or not (set(body.get("class", [])) & KEEP_BODY):
-        return None
-
-    h1 = soup.select_one("main h1.title") or soup.select_one("h1.title")
-    if not h1:
-        return None
-
-    if "package-declaration-page" in body.get("class", []):
-        return convert_package(soup, h1)
-    return convert_class(soup, h1)
 
 def convert_class(soup, h1) -> str | None:
     # FQN = package (from the sub-title) + simple name (from the h1, kind stripped)
@@ -144,7 +140,6 @@ def convert_class(soup, h1) -> str | None:
         md += render_member(sec)
 
     out = "\n".join(md).rstrip() + "\n"
-    # An empty stub (no description, no members) is not worth a corpus doc.
     return out if len(out.splitlines()) > 3 else None
 
 def convert_package(soup, h1) -> str | None:
@@ -154,7 +149,6 @@ def convert_package(soup, h1) -> str | None:
     body = block_text(desc)
     if body:
         md += [body, ""]
-    # Contained packages/types: pair each linked name with its description cell.
     entries = []
     for first in soup.select("div.summary-table div.col-first"):
         a = first.select_one("a")
@@ -168,6 +162,117 @@ def convert_package(soup, h1) -> str | None:
         md += ["**Contents**"] + entries + [""]
     out = "\n".join(md).rstrip() + "\n"
     return out if len(out.splitlines()) > 1 else None
+
+# ======================= LEGACY (JDK 8/9/10, TcDoclet) =======================
+def render_member_legacy(h4) -> list[str]:
+    """One legacy member: <h4>name</h4> + <pre> signature + <div class="block">
+    + <dl> notes, all siblings of the h4 inside its <li class="blockList">."""
+    name = clean(h4.get_text())
+    if not name:
+        return []
+    md = [f"## {name}", ""]
+    block = None
+    notes = []
+    sig = None
+    for sib in h4.find_next_siblings():
+        nm = getattr(sib, "name", None)
+        if nm == "h4":
+            break                                    # next member
+        if nm == "pre" and sig is None:
+            sig = sib
+        elif nm == "div" and "block" in (sib.get("class") or []) and block is None:
+            block = sib
+        elif nm == "dl":
+            notes.append(sib)
+    if sig:
+        md += ["```java", clean(sig.get_text()), "```", ""]
+    body = block_text(block)
+    if body:
+        md += [body, ""]
+    for dl in notes:
+        md += render_notes(dl)
+    if md and md[-1] != "":
+        md.append("")
+    return md
+
+def convert_class_legacy(soup) -> str | None:
+    h2 = soup.select_one("h2.title")
+    if not h2:
+        return None
+    m = LEGACY_KIND.match(clean(h2.get_text()))
+    if not m:                                        # not a class/iface/enum page
+        return None
+    simple = m.group(2)
+    pkg_a = soup.select_one("div.subTitle a")
+    pkg = clean(pkg_a.get_text()) if pkg_a else ""
+    fqn = f"{pkg}.{simple}" if pkg else simple
+
+    md = [f"# {fqn}", ""]
+    desc_div = soup.select_one("div.description")
+    if desc_div:
+        sig = desc_div.find("pre")
+        if sig:
+            md += ["```java", clean(sig.get_text()), "```", ""]
+        body = block_text(desc_div.select_one("div.block"))
+        if body:
+            md += [body, ""]
+
+    details = soup.select_one("div.details")
+    if details:
+        for h4 in details.find_all("h4"):
+            md += render_member_legacy(h4)
+
+    out = "\n".join(md).rstrip() + "\n"
+    return out if len(out.splitlines()) > 3 else None
+
+def convert_package_legacy(soup) -> str | None:
+    title_el = soup.select_one("h1.title") or soup.select_one("h2.title")
+    if not title_el:
+        return None
+    m = re.match(r"^Package\s+(.+)$", clean(title_el.get_text()))
+    if not m:
+        return None
+    name = m.group(1)
+    md = [f"# Package {name}", ""]
+    block = soup.select_one("div.contentContainer div.block") or soup.select_one("div.block")
+    body = block_text(block)
+    if body:
+        md += [body, ""]
+    entries = []
+    for tbl in soup.select("table.typeSummary, table.packageSummary, table.overviewSummary"):
+        for row in tbl.select("tr"):
+            a = row.select_one("th.colFirst a, td.colFirst a")
+            if not a:
+                continue
+            nm = clean(a.get_text())
+            d_el = row.select_one("td.colLast div.block") or row.select_one("td.colLast")
+            d = clean(d_el.get_text()) if d_el else ""
+            entries.append(f"- `{nm}` — {d}" if d else f"- `{nm}`")
+    if entries:
+        md += ["**Contents**"] + entries + [""]
+    out = "\n".join(md).rstrip() + "\n"
+    return out if len(out.splitlines()) > 1 else None
+
+# --- one page ----------------------------------------------------------------
+def convert(html: str) -> str | None:
+    soup = BeautifulSoup(html, "lxml")
+    body = soup.find("body")
+    if not body:
+        return None
+    classes = set(body.get("class", []))
+
+    # MODERN: selected by the JDK <body class>.
+    if classes & KEEP_BODY:
+        h1 = soup.select_one("main h1.title") or soup.select_one("h1.title")
+        if not h1:
+            return None
+        if "package-declaration-page" in classes:
+            return convert_package(soup, h1)
+        return convert_class(soup, h1)
+
+    # LEGACY: <body> has no declaration-page class. Try class page, then package
+    # summary. Nav/use/index/tree/help pages match neither -> dropped.
+    return convert_class_legacy(soup) or convert_package_legacy(soup)
 
 # --- tree walk ---------------------------------------------------------------
 def main(src: Path, dst: Path) -> None:

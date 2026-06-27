@@ -6,11 +6,14 @@
 # ingest-copy-doxygen.sh. Same 'to_ingest' tag, same directory-only selection (the
 # exact complement of ingest-copy.sh's file selection), same prune + flip.
 #
-# It shares the dir-tag query with ingest-copy-doxygen.sh, but the two never clash:
-# the converters are mutually exclusive by content (doxy2md emits nothing for a
-# Javadoc folder; javadoc2md emits nothing for a Doxygen folder), and a folder that
-# produced no .md leaves no staging dir, so the copy loop skips it. Run BOTH copy
-# scripts before flipping (the shared flip clears all folder-tags together).
+# Besides Javadoc it runs two more converters over each tagged folder, mutually
+# exclusive by content so only the matching one emits (the others leave no staging dir):
+#   * soa-libs-index.py — a Teamcenter SOA client `libs` jar dir -> one soa-libs-index.md
+#     (package->jar map + OSGi Require-Bundle closure; the jars are binary, never copied)
+#   * wsdl2md.py        — a SOAP `wsdls` dir -> per-service wire-contract .md
+# It also shares the dir-tag query with ingest-copy-doxygen.sh without clashing (doxy2md
+# emits nothing here too). Run all copy scripts before flipping (the shared flip clears
+# all folder-tags together).
 #
 # WHAT TO TAG — your call:
 #   * a few individual MODULE folders -> a lean, scoped corpus; OR
@@ -19,9 +22,11 @@
 #     whole-set option does NOT store one copy of the shared base/runtime classes per
 #     module — it keeps one. Either way everything lands under the tagged subtree, so
 #     the prune protects it.
+#   * a SOA client `libs` folder -> soa-libs-index.md; a `wsdls` folder -> wire contracts.
 #
-# Prereqs: ~/javadoc2md.py + ~/doxy2md-venv (beautifulsoup4, lxml); key-based SSH to
-# $DEST_SSH; dest writable by that user.
+# Prereqs: ~/javadoc2md.py, ~/soa-libs-index.py, ~/wsdl2md.py + ~/doxy2md-venv
+# (beautifulsoup4, lxml; soa-libs-index is stdlib-only); key-based SSH to $DEST_SSH;
+# dest writable by that user.
 set -euo pipefail
 
 TAG_NAME="to_ingest"
@@ -34,6 +39,8 @@ DEST_SSH="runtime-host"
 DEST_DIR="/data/docs-bridge-payload/docs/mysubject/"
 VENV_PY="$HOME/doxy2md-venv/bin/python"
 JAVADOC2MD="$HOME/javadoc2md.py"
+SOALIBS="$HOME/soa-libs-index.py"   # jars dir -> soa-libs-index.md (else nothing)
+WSDL2MD="$HOME/wsdl2md.py"          # wsdls dir -> per-service .md (else nothing)
 
 q() { docker exec -i "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DB" -t -A "$@"; }
 
@@ -58,14 +65,17 @@ count="$(grep -c . "$list" || true)"
 echo ">> ${count} folder(s) tagged '${TAG_NAME}'."
 
 # Convert each tagged folder into the staging tree at the SAME relative path, so the
-# staged layout mirrors Nextcloud (and therefore the doc ids on runtime-host). A folder
-# that holds no Javadoc converts to nothing -> no staging dir -> skipped below.
+# staged layout mirrors Nextcloud (and therefore the doc ids on runtime-host). All three
+# converters run; each is mutually exclusive by content so only the matching one emits.
+# A folder matching none converts to nothing -> no staging dir -> skipped below.
 while IFS= read -r rel; do
   [[ -n "$rel" ]] || continue
   src="${SRC_ROOT}/${rel}"
   [[ -d "$src" ]] || { echo "  ! not a directory, skipping: $rel" >&2; continue; }
   echo "  - converting: $rel"
-  "$VENV_PY" "$JAVADOC2MD" "$src" "${stage}/${rel}"
+  "$VENV_PY" "$JAVADOC2MD" "$src" "${stage}/${rel}"   # Javadoc HTML -> .md tree
+  "$VENV_PY" "$SOALIBS"   "$src" "${stage}/${rel}"   # SOA libs jars -> soa-libs-index.md
+  "$VENV_PY" "$WSDL2MD"   "$src" "${stage}/${rel}"   # SOA WSDLs -> wire-contract .md
 done < "$list"
 
 # Mirror each converted set under DEST_DIR (relative path = doc id), per folder with
@@ -76,7 +86,9 @@ done < "$list"
 echo ">> Copying converted Markdown -> ${DEST_SSH}:${DEST_DIR} (mirroring NC structure)"
 while IFS= read -r rel; do
   [[ -n "$rel" && -d "${stage}/${rel}" ]] || continue
-  ssh "$DEST_SSH" "mkdir -p \"${DEST_DIR}${rel}\""
+  # -n: do NOT let ssh read stdin, or it swallows the rest of "$list" and the loop
+  # stops after the first folder (only bites when >1 folder is tagged).
+  ssh -n "$DEST_SSH" "mkdir -p \"${DEST_DIR}${rel}\""
   rsync -avh -s --delete --info=progress2 "${stage}/${rel}/" "${DEST_SSH}:${DEST_DIR}${rel}/"
 done < "$list"
 
