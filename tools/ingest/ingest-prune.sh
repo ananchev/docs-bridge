@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ingest-prune.sh — reconcile the vhost2 'teamcenter' drop dir to the Nextcloud
+# ingest-prune.sh — reconcile the runtime-host 'mysubject' drop dir to the Nextcloud
 # desired set. Any file there whose source is tagged NEITHER 'to_ingest' NOR
 # 'ingested' is an orphan and gets removed. Tagged FILES are matched exactly;
 # tagged FOLDERS protect their whole subtree (covers the .md that the doxygen
@@ -18,8 +18,8 @@ APPLY=0; [[ "${1:-}" == "--apply" ]] && APPLY=1
 PG_CONTAINER="nextcloud-postgres"
 PG_USER="nextcloud"
 PG_DB="nextcloud"
-DEST_SSH="vhost2"
-DEST_DIR="/data/docs-bridge-payload/docs/teamcenter"   # no trailing slash
+DEST_SSH="runtime-host"
+DEST_DIR="/data/docs-bridge-payload/docs/mysubject"   # no trailing slash
 
 q() { docker exec -i "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DB" -t -A "$@"; }
 

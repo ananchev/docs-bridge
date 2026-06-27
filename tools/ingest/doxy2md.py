@@ -1,9 +1,9 @@
 """Doxygen-HTML -> clean Markdown preprocessor (standalone; runs OUTSIDE the product).
 
 A corpus *preprocessor*, not part of the docs_bridge package — it never imports
-docs_bridge. It turns a published Doxygen HTML tree (e.g. the AIG t4ea/t4s API
-sets) into clean Markdown the existing ingest already accepts (`.md` is in
-config.SUPPORTED_SUFFIXES), so no change to parse/ingest is needed.
+docs_bridge. It turns a published Doxygen HTML tree into clean Markdown the existing
+ingest already accepts (`.md` is in config.SUPPORTED_SUFFIXES), so no change to
+parse/ingest is needed.
 
 Output mirrors the input tree (same relative path + basename, .html -> .md). That
 keeps the nextcloud->inbound copy step's structure mirroring intact, so the
@@ -11,7 +11,7 @@ nextcloud tags that ride on that structure are preserved.
 
 Per page: `#` = the class/group title, `##` = each documented member. Docling's
 HybridChunker turns those headings into the chunk `section_path`, so citations
-read e.g. "BASE64 file handling > tpco_b64tobinfile()".
+read e.g. "File utilities > readBuffer()".
 
     python tools/doxy2md.py <src_html_dir> <dst_md_dir>
 

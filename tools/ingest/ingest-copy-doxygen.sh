@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ingest-copy-doxygen.sh — for every FOLDER tagged 'to_ingest' in Nextcloud,
 # convert its Doxygen HTML to clean Markdown (doxy2md.py, in a venv) and copy the
-# .md tree to the docs-bridge 'teamcenter' drop dir on vhost2, MIRRORING the
+# .md tree to the docs-bridge 'mysubject' drop dir on runtime-host, MIRRORING the
 # Nextcloud folder structure (relative path = doc id), exactly as ingest-copy.sh
 # does for PDFs. Shares the 'to_ingest' tag with the PDF flow: ingest-copy.sh's
 # query EXCLUDES directories, this one selects ONLY tagged directories, so the
@@ -18,9 +18,9 @@ PG_CONTAINER="nextcloud-postgres"
 PG_USER="nextcloud"
 PG_DB="nextcloud"
 NC_USER="${NC_USER:-youruser}"   # Nextcloud account that owns the tagged files
-SRC_ROOT="/nvme/containers/nextcloud/data/${NC_USER}/files"
-DEST_SSH="vhost2"
-DEST_DIR="/data/docs-bridge-payload/docs/teamcenter/"
+SRC_ROOT="/path/to/nextcloud/data/${NC_USER}/files"
+DEST_SSH="runtime-host"
+DEST_DIR="/data/docs-bridge-payload/docs/mysubject/"
 VENV_PY="$HOME/doxy2md-venv/bin/python"
 DOXY2MD="$HOME/doxy2md.py"
 
@@ -47,7 +47,7 @@ count="$(grep -c . "$list" || true)"
 echo ">> ${count} folder(s) tagged '${TAG_NAME}'."
 
 # Convert each tagged folder into the staging tree at the SAME relative path, so
-# the staged layout mirrors Nextcloud (and therefore the doc ids on vhost2).
+# the staged layout mirrors Nextcloud (and therefore the doc ids on runtime-host).
 while IFS= read -r rel; do
   [[ -n "$rel" ]] || continue
   src="${SRC_ROOT}/${rel}"
@@ -59,8 +59,7 @@ done < "$list"
 # Mirror each converted set under DEST_DIR (relative path = doc id), per folder
 # with --delete so a regenerated set that DROPPED pages doesn't leave stale .md.
 # Scoped to the folder's own subtree, so other corpora are never touched. -s
-# (--protect-args) keeps the spaces in 'Teamcenter 2512' / 'AIG APIs
-# Documentation' intact across the remote shell.
+# (--protect-args) keeps spaces in folder names intact across the remote shell.
 echo ">> Copying converted Markdown -> ${DEST_SSH}:${DEST_DIR} (mirroring NC structure)"
 while IFS= read -r rel; do
   [[ -n "$rel" && -d "${stage}/${rel}" ]] || continue

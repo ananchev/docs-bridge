@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ingest-copy.sh — copy every file tagged 'to_ingest' in Nextcloud to the
-# docs-bridge 'teamcenter' drop dir on vhost2, MIRRORING the Nextcloud folder
+# docs-bridge 'mysubject' drop dir on runtime-host, MIRRORING the Nextcloud folder
 # structure. In docs-bridge the relative path IS the doc id, so the folder
 # layout keeps every doc unique — the same basename in different folders or
 # product versions never collides. Idempotent (rsync delta). Tag left untouched.
@@ -13,9 +13,9 @@ PG_CONTAINER="nextcloud-postgres"
 PG_USER="nextcloud"
 PG_DB="nextcloud"
 NC_USER="${NC_USER:-youruser}"   # Nextcloud account that owns the tagged files
-SRC_ROOT="/nvme/containers/nextcloud/data/${NC_USER}/files"
-DEST_SSH="vhost2"
-DEST_DIR="/data/docs-bridge-payload/docs/teamcenter/"
+SRC_ROOT="/path/to/nextcloud/data/${NC_USER}/files"
+DEST_SSH="runtime-host"
+DEST_DIR="/data/docs-bridge-payload/docs/mysubject/"
 
 q() { docker exec -i "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DB" -t -A "$@"; }
 
