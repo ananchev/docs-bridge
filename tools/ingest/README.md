@@ -51,17 +51,22 @@ placeholder.
 | `run-ingest.sh` | runtime | One-shot worker `sync` with wall-clock timing; logs to `~/ingest-logs/`. Built for `screen`/`tmux`. |
 | `resume-embed.sh` | runtime | Recovery for a `sync` killed/crashed mid-Pass-2 (embed). Drains the already-staged chunks straight to embed→Qdrant (no re-parse), since a plain re-`sync` no-ops (see resume gap below). Idempotent + re-runnable; retries each upsert with reconnect/backoff so a Qdrant restart doesn't abort the drain. Logs to `~/ingest-logs/resume_*.log`; built for `screen`/`tmux`. |
 
-## Resume gap (why `resume-embed.sh` exists)
+## Resume after an interrupted Pass 2
 
 The worker's two-pass `sync` records each doc in the manifest **during Pass 1**
 (parse), *before* its chunks are embedded in Pass 2. So if Pass 2 is interrupted
-(e.g. Qdrant disconnects mid-upsert), the next `sync` sees every doc as
-*unchanged* → `SyncStats.is_noop` → it returns without draining the staged chunks,
-leaving a split state (manifest says done / Qdrant partial / `staged_chunks` full).
-`resume-embed.sh` is the recovery: it runs Pass 2 only against `staged_chunks`.
-Idempotent because point ids are a deterministic UUIDv5 of `chunk_id`, so re-upserts
-overwrite rather than duplicate. (A proper code fix — drain staged before
-`clear_staged`, or record docs only after embed — is still TODO.)
+(e.g. Qdrant disconnects mid-upsert), those docs look *unchanged* on the next run.
+**`sync` now handles this itself:** `sync_subject` drains any leftover `staged_chunks`
+*before* it classifies, so simply **re-running `./run-ingest.sh <subject>` resumes an
+interrupted embed** (no re-parse) and then proceeds normally. Idempotent because point
+ids are a deterministic UUIDv5 of `chunk_id`, so re-upserts overwrite the partial points
+rather than duplicate them. `qdrant_io.upsert` also retries with backoff on a Qdrant
+disconnect, so a brief Qdrant restart no longer aborts the run.
+
+`resume-embed.sh` remains as an **explicit Pass-2-only** drain (same logic, standalone)
+for when you want to run just the embed step without invoking the full `sync` — handy
+to confirm/benchmark a recovery, or if you ever need to drain staged chunks without a
+disk scan.
 
 ## Sample invocations
 

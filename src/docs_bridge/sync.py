@@ -44,10 +44,45 @@ def _classify(
     return new, changed, deleted
 
 
+def _drain_staged(cfg: Config, subject: Subject, manifest: Manifest, client) -> int:
+    """Embed every staged chunk for the subject and upsert it to Qdrant, then clear
+    staging. This is PASS 2 *and* the resume path: point ids are deterministic, so
+    re-running overwrites any partial points from an interrupted run rather than
+    duplicating them (idempotent, design §8). Returns the number of chunks embedded.
+    """
+    staged = manifest.count_staged(subject.name)
+    if not staged:
+        return 0
+    embedder = get_embedder(cfg)
+    done = 0
+    for batch in manifest.iter_staged_batches(subject.name, cfg.ingest.batch_size):
+        dense, sparse = embedder.encode([c.text for c in batch])
+        qdrant_io.upsert(client, subject.collection, batch, dense, sparse)
+        done += len(batch)
+        log.debug("embedded %d / %d", done, staged)
+    del embedder
+    gc.collect()
+    manifest.clear_staged(subject.name)
+    return done
+
+
 def sync_subject(
     cfg: Config, subject: Subject, manifest: Manifest, client
 ) -> SyncStats:
     stats = SyncStats(subject=subject.name)
+
+    # RESUME (closes the resume gap): a previous run may have been interrupted during
+    # PASS 2, leaving chunks staged while the manifest already records their docs
+    # (PASS 1 records each doc provisionally, before embed). A plain classify would then
+    # see those docs as unchanged and skip them, never draining the staged chunks. So
+    # before classifying, drain whatever is still staged from an earlier run —
+    # idempotent and with no re-parse. A clean run finds nothing staged here.
+    if manifest.count_staged(subject.name):
+        qdrant_io.ensure_collection(client, cfg, subject.collection)
+        resumed = _drain_staged(cfg, subject, manifest, client)
+        stats.chunks_embedded += resumed
+        log.info("%s: resumed %d staged chunks from an interrupted run",
+                 subject.name, resumed)
 
     on_disk = scan(subject, cfg)
     known = manifest.docs_for_subject(subject.name)
@@ -97,18 +132,7 @@ def sync_subject(
         qdrant_io.delete_doc(client, subject.collection, doc_id)
         manifest.delete_doc(doc_id)
 
-    staged = manifest.count_staged(subject.name)
-    if staged:
-        embedder = get_embedder(cfg)
-        for batch in manifest.iter_staged_batches(subject.name, cfg.ingest.batch_size):
-            dense, sparse = embedder.encode([c.text for c in batch])
-            qdrant_io.upsert(client, subject.collection, batch, dense, sparse)
-            stats.chunks_embedded += len(batch)
-            log.debug("embedded %d / %d", stats.chunks_embedded, staged)
-        del embedder
-        gc.collect()
-
-    manifest.clear_staged(subject.name)
+    stats.chunks_embedded += _drain_staged(cfg, subject, manifest, client)
     return stats
 
 

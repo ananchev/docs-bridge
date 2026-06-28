@@ -15,6 +15,7 @@ so re-ingesting a doc overwrites its points rather than duplicating them
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 
 from qdrant_client import QdrantClient
@@ -29,6 +30,14 @@ log = logging.getLogger(__name__)
 DENSE = "dense"
 SPARSE = "sparse"
 _NS = uuid.UUID("6f9619ff-8b86-d011-b42d-00c04fc964ff")  # fixed namespace for ids
+
+# Qdrant can drop the connection mid-upsert (e.g. it restarts under memory pressure),
+# surfacing as ResponseHandlingException "Server disconnected without sending a
+# response." Upserts are idempotent (deterministic point ids), so we retry with
+# capped backoff: a transient disconnect recovers on a fresh httpx connection, and
+# the backoff rides out a brief Qdrant restart instead of killing a multi-hour run.
+_UPSERT_MAX_ATTEMPTS = 8
+_UPSERT_BACKOFF_CAP = 60.0
 
 
 def point_id(chunk_id: str) -> str:
@@ -110,4 +119,21 @@ def upsert(
         )
         for c, d, s in zip(chunks, dense, sparse)
     ]
-    client.upsert(collection_name=collection, points=points)
+    delay = 2.0
+    for attempt in range(1, _UPSERT_MAX_ATTEMPTS + 1):
+        try:
+            client.upsert(collection_name=collection, points=points)
+            return
+        except Exception as exc:  # transport-level: disconnect / timeout / 5xx
+            if attempt == _UPSERT_MAX_ATTEMPTS:
+                log.error(
+                    "upsert to %s failed after %d attempts: %r",
+                    collection, attempt, exc,
+                )
+                raise
+            log.warning(
+                "upsert to %s failed (attempt %d/%d): %r; retrying in %.0fs",
+                collection, attempt, _UPSERT_MAX_ATTEMPTS, exc, delay,
+            )
+            time.sleep(delay)
+            delay = min(delay * 2, _UPSERT_BACKOFF_CAP)
