@@ -49,6 +49,19 @@ placeholder.
 | `ingest-flip-tag.sh` | NC | After ingest + verify, move `to_ingest` → `ingested` (the "done" marker). Covers files and folders. |
 | `nextcloud-import.sh` | NC | Register files dropped onto the data dir over SSH: chown to the web user (33:33) + normalise perms, `occ files:scan` the subtree, then `occ fulltextsearch:index`. Needs root (chown) + docker access. Run before tagging. |
 | `run-ingest.sh` | runtime | One-shot worker `sync` with wall-clock timing; logs to `~/ingest-logs/`. Built for `screen`/`tmux`. |
+| `resume-embed.sh` | runtime | Recovery for a `sync` killed/crashed mid-Pass-2 (embed). Drains the already-staged chunks straight to embed→Qdrant (no re-parse), since a plain re-`sync` no-ops (see resume gap below). Idempotent + re-runnable; retries each upsert with reconnect/backoff so a Qdrant restart doesn't abort the drain. Logs to `~/ingest-logs/resume_*.log`; built for `screen`/`tmux`. |
+
+## Resume gap (why `resume-embed.sh` exists)
+
+The worker's two-pass `sync` records each doc in the manifest **during Pass 1**
+(parse), *before* its chunks are embedded in Pass 2. So if Pass 2 is interrupted
+(e.g. Qdrant disconnects mid-upsert), the next `sync` sees every doc as
+*unchanged* → `SyncStats.is_noop` → it returns without draining the staged chunks,
+leaving a split state (manifest says done / Qdrant partial / `staged_chunks` full).
+`resume-embed.sh` is the recovery: it runs Pass 2 only against `staged_chunks`.
+Idempotent because point ids are a deterministic UUIDv5 of `chunk_id`, so re-upserts
+overwrite rather than duplicate. (A proper code fix — drain staged before
+`clear_staged`, or record docs only after embed — is still TODO.)
 
 ## Sample invocations
 
