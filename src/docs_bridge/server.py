@@ -4,10 +4,12 @@ Surface (all behind a static bearer token, except /healthz):
   - MCP (streamable-http) at /mcp   ->  tools: list_subjects(), search()
   - REST mirror                     ->  GET /healthz, GET /v1/subjects, POST /v1/search
 
-Auth is a static bearer token (DOCS_BRIDGE_TOKEN) — the design's chosen model: the
-data-compliant client is LibreChat, which sends a static header (§14). It is kept as
-a clean ASGI middleware seam so that IF a consumer MCP client (claude.ai) is ever
-required, only this layer swaps to the OAuth `mcp-auth` AS — nothing else changes.
+Auth is static bearer tokens (DOCS_BRIDGE_TOKENS / DOCS_BRIDGE_TOKEN) — the design's
+chosen model: the data-compliant clients send a static header (§14). A SET of tokens
+is accepted, one per client (LibreChat, a local Claude Code / opencode, ...), each
+independently revocable. It is kept as a clean ASGI middleware seam so that IF a
+consumer MCP client (claude.ai) is ever required, only this layer swaps to the OAuth
+`mcp-auth` AS — nothing else changes.
 
 NOTE (verify on the Pi): the FastMCP integration points used here are `mcp.http_app(
 path=...)` returning a Starlette app and `.lifespan`. Pin fastmcp exactly once these
@@ -16,6 +18,7 @@ are confirmed against the installed version.
 
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 
@@ -76,21 +79,35 @@ def build_mcp(searcher: Searcher, cfg: Config):
     return mcp
 
 
+def _load_tokens() -> set[str]:
+    """Valid bearer tokens, unioned from DOCS_BRIDGE_TOKENS (plural: comma- or
+    whitespace-separated, one secret per client) and DOCS_BRIDGE_TOKEN (singular,
+    kept for back-compat with the original single-token deployment). Per-client
+    tokens let each consumer (LibreChat, a local Claude Code / opencode, a teammate)
+    be revoked independently instead of sharing one secret."""
+    raw = " ".join(
+        os.environ.get(k, "") for k in ("DOCS_BRIDGE_TOKENS", "DOCS_BRIDGE_TOKEN")
+    )
+    return {t for t in raw.replace(",", " ").split() if t}
+
+
 class BearerAuth:
     """Pure-ASGI bearer-token gate. Pure ASGI (not BaseHTTPMiddleware) so it never
-    buffers the MCP SSE stream. Fails CLOSED: a protected path with no/!matching
-    token -> 401; /healthz (and any open_paths) pass through."""
+    buffers the MCP SSE stream. Fails CLOSED: a protected path whose Authorization
+    header matches none of the configured tokens -> 401; /healthz (and any
+    open_paths) pass through. Accepts a SET of tokens (one per client); the match is
+    constant-time (hmac.compare_digest) so response timing can't leak token bytes."""
 
-    def __init__(self, app, token: str, open_paths: set[str]) -> None:
+    def __init__(self, app, tokens: set[str], open_paths: set[str]) -> None:
         self.app = app
-        self.token = token
+        self.expected = [f"Bearer {t}" for t in tokens]
         self.open_paths = open_paths
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http" and scope.get("path", "") not in self.open_paths:
             headers = dict(scope.get("headers") or [])
             auth = headers.get(b"authorization", b"").decode()
-            if not self.token or auth != f"Bearer {self.token}":
+            if not any(hmac.compare_digest(auth, e) for e in self.expected):
                 await JSONResponse({"error": "unauthorized"}, status_code=401)(
                     scope, receive, send
                 )
@@ -113,10 +130,15 @@ def build_app(cfg: Config):
         lifespan=mcp_app.lifespan,
     )
 
-    token = os.environ.get("DOCS_BRIDGE_TOKEN", "")
-    if not token:
-        log.warning("DOCS_BRIDGE_TOKEN is not set — all non-health requests will 401")
-    return BearerAuth(app, token=token, open_paths={"/healthz"})
+    tokens = _load_tokens()
+    if not tokens:
+        log.warning(
+            "no bearer tokens set (DOCS_BRIDGE_TOKENS / DOCS_BRIDGE_TOKEN) — "
+            "all non-health requests will 401"
+        )
+    else:
+        log.info("bearer auth: %d token(s) loaded", len(tokens))
+    return BearerAuth(app, tokens=tokens, open_paths={"/healthz"})
 
 
 def serve() -> None:
