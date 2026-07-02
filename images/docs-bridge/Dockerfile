@@ -37,10 +37,10 @@ RUN pip install --no-cache-dir '.[server]'
 FROM base AS exporter
 COPY tools ./tools
 RUN pip install --no-cache-dir '.[ingest,export]'
-RUN python tools/export_bge_m3_onnx.py --out /opt/bge-m3-onnx
-RUN python tools/export_bge_m3_onnx.py --out /opt/bge-m3-onnx --quantize-only
-RUN python tools/export_bge_reranker_onnx.py --out /opt/bge-reranker-onnx
-RUN python tools/export_bge_reranker_onnx.py --out /opt/bge-reranker-onnx --quantize-only
+RUN python tools/onnx-export/export_bge_m3_onnx.py --out /opt/bge-m3-onnx
+RUN python tools/onnx-export/export_bge_m3_onnx.py --out /opt/bge-m3-onnx --quantize-only
+RUN python tools/onnx-export/export_bge_reranker_onnx.py --out /opt/bge-reranker-onnx
+RUN python tools/onnx-export/export_bge_reranker_onnx.py --out /opt/bge-reranker-onnx --quantize-only
 
 # --- runtime: base + ONLY the INT8 files the two loaders read -----------------
 FROM base AS runtime
