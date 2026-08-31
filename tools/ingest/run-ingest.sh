@@ -15,7 +15,14 @@ SUBJECT="${1:-all}"
 DATA_ROOT="/data/docs-bridge-payload"
 CONFIG="/data/docker/docs-bridge/config/config.yaml"
 NET="docs-bridge-net"
-IMAGE="ingest-worker:latest"
+# FULLY QUALIFIED on purpose. Podman ships short-name-mode="enforcing": an unqualified
+# `ingest-worker:latest` that is not found locally sends podman down the PULL path,
+# where it wants to prompt for which registry to use — and with no TTY it just dies
+# ("short-name resolution enforced but cannot prompt without a TTY", exit 125). That is
+# silent when the caller is a systemd timer. `localhost/` is podman's namespace for
+# images that were built rather than pulled, so it can never be mistaken for a remote
+# ref. Override for a differently-tagged image: IMAGE=... ./run-ingest.sh
+IMAGE="${IMAGE:-localhost/ingest-worker:latest}"
 
 start_iso="$(date +%Y%m%dT%H%M%S%z)"          # ISO-8601 basic, no colons (fs-safe)
 logdir="$HOME/ingest-logs"; mkdir -p "$logdir"

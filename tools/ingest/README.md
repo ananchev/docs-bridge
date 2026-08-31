@@ -50,6 +50,8 @@ placeholder.
 | `nextcloud-import.sh` | NC | Register files dropped onto the data dir over SSH: chown to the web user (33:33) + normalise perms, `occ files:scan` the subtree, then `occ fulltextsearch:index`. Needs root (chown) + docker access. Run before tagging. |
 | `run-ingest.sh` | runtime | One-shot worker `sync` with wall-clock timing; logs to `~/ingest-logs/`. Built for `screen`/`tmux`. |
 | `resume-embed.sh` | runtime | Recovery for a `sync` killed/crashed mid-Pass-2 (embed). Drains the already-staged chunks straight to embed→Qdrant (no re-parse), since a plain re-`sync` no-ops (see resume gap below). Idempotent + re-runnable; retries each upsert with reconnect/backoff so a Qdrant restart doesn't abort the drain. Logs to `~/ingest-logs/resume_*.log`; built for `screen`/`tmux`. |
+| `verify-corpus.py` | runtime | Reconcile the manifest against what Qdrant actually holds: per doc, recorded `chunk_count` vs real point count. Names the docs that are MISSING (manifest says done, index has nothing), PARTIAL, over-count, or ORPHAN. Stdlib-only, read-only. Exit 1 on drift, so it can gate a scheduled run. `--write-broken FILE` feeds `reingest-docs.py`. |
+| `reingest-docs.py` | runtime | Force named docs to be re-ingested: deletes their manifest rows (+ any staged rows) so the next `sync` classifies them NEW. The repair for a doc whose manifest row is a lie — hash-delta would otherwise skip it forever. Dry-run by default, `--apply` to act; backs the manifest up first; `--purge-points` also clears stale points. Needs write access to the manifest (root-owned → `sudo`). |
 
 ## Resume after an interrupted Pass 2
 
@@ -67,6 +69,48 @@ disconnect, so a brief Qdrant restart no longer aborts the run.
 for when you want to run just the embed step without invoking the full `sync` — handy
 to confirm/benchmark a recovery, or if you ever need to drain staged chunks without a
 disk scan.
+
+## When the manifest outlives the chunks (silent drift)
+
+The auto-drain above closes the gap going forward, but it cannot repair damage already
+done. If Pass 2 was interrupted *and* a later run cleared `staged_chunks`, the doc keeps
+its Pass-1 manifest row — right hash, right `chunk_count` — while Qdrant holds none of
+its points. Hash-delta then classifies it **unchanged** on every future run, so the doc
+is permanently absent from the index and no `sync` output ever mentions it. Manifest
+totals look healthy; retrieval is quietly blind to that document.
+
+`verify-corpus.py` is the only thing that sees this, because it asks Qdrant instead of
+trusting the manifest. Repair is two steps:
+
+```bash
+./verify-corpus.py --subject mysubject --write-broken /tmp/broken.txt   # detect
+sudo ./reingest-docs.py --subject mysubject --docs-from /tmp/broken.txt # preview
+sudo ./reingest-docs.py --subject mysubject --docs-from /tmp/broken.txt --apply
+./run-ingest.sh mysubject                                              # re-parse + embed
+./verify-corpus.py --subject mysubject                                 # confirm clean
+```
+
+Worth running after any ingest that did not exit 0 — and worth running on a schedule,
+since the whole point of this failure mode is that nothing else reports it.
+
+## Podman short names: fully qualify the image
+
+Podman defaults to `short-name-mode = "enforcing"`. An unqualified image ref that is
+**not** in local storage sends podman down the *pull* path, where it wants to prompt for
+which registry to use; with no TTY it exits 125 with `short-name resolution enforced but
+cannot prompt without a TTY`. From a `screen` session you get the prompt and never
+notice the trap. From a systemd timer the run dies in under a second, every night,
+visible only in journald.
+
+So `run-ingest.sh` (and the operator's timer unit) reference the worker
+**fully qualified** — `localhost/ingest-worker:latest`. `localhost/` is podman's
+namespace for images that were built rather than pulled, so the ref can never be read as
+a remote one. Note that building via the Docker-compat API with a bare
+`ingest-worker:latest` stores it as `docker.io/library/ingest-worker:latest`, which
+*looks* remote and reintroduces the ambiguity — tag the build `localhost/...` too.
+
+Check a suspect timer with `journalctl -u <unit> | grep -c short-name` before assuming
+the ingest merely had nothing to do.
 
 ## Sample invocations
 
