@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ingest-copy-doxygen.sh — for every FOLDER tagged 'to_ingest' in Nextcloud,
 # convert its Doxygen HTML to clean Markdown (doxy2md.py, in a venv) and copy the
-# .md tree to the docs-bridge 'mysubject' drop dir on runtime-host, MIRRORING the
+# .md tree to the docs-bridge drop dir for corpus $SUBJECT on runtime-host, MIRRORING the
 # Nextcloud folder structure (relative path = doc id), exactly as ingest-copy.sh
 # does for PDFs. Shares the 'to_ingest' tag with the PDF flow: ingest-copy.sh's
 # query EXCLUDES directories, this one selects ONLY tagged directories, so the
@@ -20,7 +20,8 @@ PG_DB="nextcloud"
 NC_USER="${NC_USER:-youruser}"   # Nextcloud account that owns the tagged files
 SRC_ROOT="/path/to/nextcloud/data/${NC_USER}/files"
 DEST_SSH="runtime-host"
-DEST_DIR="/data/docs-bridge-payload/docs/mysubject/"
+SUBJECT="${SUBJECT:-mysubject}"   # target corpus on the runtime host (dir = subject name)
+DEST_DIR="/data/docs-bridge-payload/docs/${SUBJECT}/"
 VENV_PY="$HOME/doxy2md-venv/bin/python"
 DOXY2MD="$HOME/doxy2md.py"
 
@@ -68,6 +69,6 @@ while IFS= read -r rel; do
 done < "$list"
 
 # Reconcile the whole target: drop anything no longer tagged (to_ingest ∪ ingested).
-~/ingest-prune.sh --apply
+SUBJECT="$SUBJECT" ~/ingest-prune.sh --apply
 
 echo ">> Done. Tag left as '${TAG_NAME}'. After ingest + verify: ~/ingest-flip-tag.sh"

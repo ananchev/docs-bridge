@@ -34,6 +34,14 @@ running both over the same tag is safe — each picks up only its own folders.
 Set `NC_USER` to your Nextcloud account (it builds the archive path); default is a
 placeholder.
 
+Set `SUBJECT` to the destination corpus (the drop dir is `docs/<subject>`); default is
+the `mysubject` placeholder. The copy scripts pass it through to `ingest-prune.sh`, so
+one run only ever touches that corpus — the other corpora on the host are untouched:
+
+```bash
+SUBJECT=polarion NC_USER=youruser ~/ingest-copy.sh
+```
+
 ## Scripts
 
 | Script | Host | Purpose |
@@ -126,7 +134,7 @@ python3 -m venv ~/doxy2md-venv && ~/doxy2md-venv/bin/pip install beautifulsoup4 
 NC_USER=youruser sudo -E ~/nextcloud-import.sh "Some/Folder"
 
 # preview what the prune would remove (safe, read-only)
-NC_USER=youruser ~/ingest-prune.sh
+SUBJECT=mysubject NC_USER=youruser ~/ingest-prune.sh
 
 # copy tagged API-doc folders (convert + copy + prune) — run BOTH; each picks its own
 NC_USER=youruser ~/ingest-copy-doxygen.sh

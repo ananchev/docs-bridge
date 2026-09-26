@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# ingest-prune.sh — reconcile the runtime-host 'mysubject' drop dir to the Nextcloud
+# ingest-prune.sh — reconcile the runtime-host $SUBJECT drop dir to the Nextcloud
 # desired set. Any file there whose source is tagged NEITHER 'to_ingest' NOR
 # 'ingested' is an orphan and gets removed. Tagged FILES are matched exactly;
 # tagged FOLDERS protect their whole subtree (covers the .md that the doxygen
 # copy generates under a tagged folder). Reconciles the ENTIRE target every run,
 # regardless of which copy script called it — so "untag in Nextcloud" == "gone
-# from the corpus on the next copy", no flip flag needed for deletion.
+# from the corpus on the next copy", no flip flag needed for deletion. The target
+# is ONE corpus, so pruning $SUBJECT never touches another corpus' drop dir.
 #
 # Cheap: ONE tag query + a `find` of the (small) target. It never walks the
 # Nextcloud archive — the desired set is pure tag metadata.
@@ -19,7 +20,8 @@ PG_CONTAINER="nextcloud-postgres"
 PG_USER="nextcloud"
 PG_DB="nextcloud"
 DEST_SSH="runtime-host"
-DEST_DIR="/data/docs-bridge-payload/docs/mysubject"   # no trailing slash
+SUBJECT="${SUBJECT:-mysubject}"   # target corpus on the runtime host (dir = subject name)
+DEST_DIR="/data/docs-bridge-payload/docs/${SUBJECT}"   # no trailing slash
 
 q() { docker exec -i "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DB" -t -A "$@"; }
 

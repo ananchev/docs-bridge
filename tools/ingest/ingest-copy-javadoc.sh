@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ingest-copy-javadoc.sh — for every FOLDER tagged 'to_ingest' in Nextcloud,
 # convert its JDK Javadoc HTML to clean Markdown (javadoc2md.py, in a venv) and copy
-# the .md tree to the docs-bridge 'mysubject' drop dir on runtime-host, MIRRORING the
+# the .md tree to the docs-bridge drop dir for corpus $SUBJECT on runtime-host, MIRRORING the
 # Nextcloud folder structure (relative path = doc id) — the Javadoc TWIN of
 # ingest-copy-doxygen.sh. Same 'to_ingest' tag, same directory-only selection (the
 # exact complement of ingest-copy.sh's file selection), same prune + flip.
@@ -36,7 +36,8 @@ PG_DB="nextcloud"
 NC_USER="${NC_USER:-youruser}"   # Nextcloud account that owns the tagged folders
 SRC_ROOT="/path/to/nextcloud/data/${NC_USER}/files"
 DEST_SSH="runtime-host"
-DEST_DIR="/data/docs-bridge-payload/docs/mysubject/"
+SUBJECT="${SUBJECT:-mysubject}"   # target corpus on the runtime host (dir = subject name)
+DEST_DIR="/data/docs-bridge-payload/docs/${SUBJECT}/"
 VENV_PY="$HOME/doxy2md-venv/bin/python"
 JAVADOC2MD="$HOME/javadoc2md.py"
 SOALIBS="$HOME/soa-libs-index.py"   # jars dir -> soa-libs-index.md (else nothing)
@@ -93,6 +94,6 @@ while IFS= read -r rel; do
 done < "$list"
 
 # Reconcile the whole target: drop anything no longer tagged (to_ingest ∪ ingested).
-~/ingest-prune.sh --apply
+SUBJECT="$SUBJECT" ~/ingest-prune.sh --apply
 
 echo ">> Done. Tag left as '${TAG_NAME}'. After ingest + verify: ~/ingest-flip-tag.sh"

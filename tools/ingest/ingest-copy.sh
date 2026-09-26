@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ingest-copy.sh — copy every file tagged 'to_ingest' in Nextcloud to the
-# docs-bridge 'mysubject' drop dir on runtime-host, MIRRORING the Nextcloud folder
+# docs-bridge drop dir for corpus $SUBJECT on runtime-host, MIRRORING the Nextcloud
 # structure. In docs-bridge the relative path IS the doc id, so the folder
 # layout keeps every doc unique — the same basename in different folders or
 # product versions never collides. Idempotent (rsync delta). Tag left untouched.
@@ -15,7 +15,8 @@ PG_DB="nextcloud"
 NC_USER="${NC_USER:-youruser}"   # Nextcloud account that owns the tagged files
 SRC_ROOT="/path/to/nextcloud/data/${NC_USER}/files"
 DEST_SSH="runtime-host"
-DEST_DIR="/data/docs-bridge-payload/docs/mysubject/"
+SUBJECT="${SUBJECT:-mysubject}"   # target corpus on the runtime host (dir = subject name)
+DEST_DIR="/data/docs-bridge-payload/docs/${SUBJECT}/"
 
 q() { docker exec -i "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DB" -t -A "$@"; }
 
@@ -40,6 +41,6 @@ echo ">> ${count} file(s) tagged '${TAG_NAME}' -> ${DEST_SSH}:${DEST_DIR} (mirro
 rsync -avh --info=progress2 --files-from="$list" "${SRC_ROOT}/" "${DEST_SSH}:${DEST_DIR}"
 
 # Reconcile the whole target: drop anything no longer tagged (to_ingest ∪ ingested).
-~/ingest-prune.sh --apply
+SUBJECT="$SUBJECT" ~/ingest-prune.sh --apply
 
 echo ">> Copy done. Tag left as '${TAG_NAME}'. After ingest + verify: ~/ingest-flip-tag.sh"
