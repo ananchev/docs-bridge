@@ -1,0 +1,30 @@
+
+rerank A/B | fixture=/out/fixture.json
+  baseline:  onnx-cpu-int8 (BAAI/bge-reranker-v2-m3) on f6b1bd1e525a [aarch64, 10 cores], 354 ms/pair
+  candidate: onnx int8 on CPUExecutionProvider (BAAI/bge-reranker-v2-m3)
+  top_n=40 k=6 max_length=512 oracle_pool=80 queries=8
+  bar: top-3 ordered-identical AND top-6 Jaccard >= 0.83
+
+  warm-up (8 pairs, includes any lazy init): 1.57 s
+
+query                                           s  ms/pr  spdup  top3  jacc  goldA  goldB    maxS
+-------------------------------------------------------------------------------------------------
+How do we read properties of a Teamcenter   13.65  341.3   1.0x   yes  1.00   1.00   1.00    4.10
+How to read BOM data from Teamcenter in A   14.63  365.9   1.0x   yes  1.00   1.00   1.00    4.00
+How to send an email from T4X?              13.45  336.2   1.0x   yes  1.00   1.00   1.00    3.00
+How does SAP distinguish if a BOM line wa   14.37  359.2   1.0x   yes  1.00   1.00   0.83    6.14
+How do we update basic unit of measure in   14.05  351.2   1.0x   yes  1.00   1.00   0.80    2.28
+TC_transfer_area site preference            16.56  414.1   1.0x   yes  1.00   1.00   0.83    3.89
+EPM_attach_related_objects                  12.98  324.6   1.0x   yes  1.00   1.00   1.00    5.40
+how to bake sourdough bread                 13.23  330.8   1.0x   yes  1.00   1.00   1.00   -5.60
+
+speed: 351.2 ms/pair median (1.0x the baseline's 354 ms/pair)
+       => 14.05 s per search at top_n=40, 21.07 s at multi_top_n=60
+
+SELFTEST: max |candidate - baseline| = 0.00e+00 => FAITHFUL
+
+MATCHES baseline on all 7 real queries (top-3 identical, top-6 Jaccard >= 0.83).
+
+VERDICT: PASS
+
+wrote /out/ab-selftest.json

@@ -35,11 +35,11 @@ Three findings, all verified in this repo's code or from the pinned dependency s
 define the work:
 
 **0.1 Query latency is FLOP-bound, not tuning-bound.** `rerank.py:score()` batches all
-candidates into one `session.run`, and latency is dead linear at **~270 ms per
-(query, passage) pair (measured)** — the batch buys nothing because a single pair's
-matmuls already saturate every core. At the deployed `rerank.top_n: 40` that is
-**~11 s per query (measured)**, ~16 s for a multi-subject or `"all"` search at
-`multi_top_n: 60`. `top_n` is closed as a lever: `recall_topn.py` and
+candidates into one `session.run`, and latency is dead linear at **~354 ms per
+(query, passage) pair (measured, Gate 1 §2.2 — supersedes the earlier ~270 ms)** —
+the batch buys nothing because a single pair's matmuls already saturate every core.
+At the deployed `rerank.top_n: 40` that is **~14.2 s per query (measured)**, ~21 s
+for a multi-subject or `"all"` search at `multi_top_n: 60`. `top_n` is closed as a lever: `recall_topn.py` and
 `validate_union.py` showed 30 drops co-top chunks and 16 changes the answer on 16/20
 queries. So the only levers are **fewer/shorter pairs, a smaller model, or different
 silicon.**
@@ -63,8 +63,12 @@ multi-user deployment**, independent of hardware.
 does not add throughput (the FLOPs are fixed); adding hardware does, close to
 linearly. The missing quantity is **C = the number of cores a single search usefully
 consumes.** `OnnxReranker.__init__` already accepts `threads=` (`rerank.py:33`) but
-`search.py:59-66` never passes it, so every session takes every core and C has never
-been measured. C sets permits-per-instance and therefore the entire fleet shape.
+`search.py:59-66` never passes it, so every session takes every core. **Gate 1
+measured C = 6 on vhost2 — and found 8 and 10 threads SLOWER than 6**, because the
+M2 Pro has 6 performance + 4 efficiency cores and ORT barriers on its slowest
+thread. So C = 6 is a property of this silicon, not of the model: it must be
+re-measured on the x86 target before it sizes anything (§7). The free consequence
+that does transfer: not passing `threads=` costs ~14% here.
 
 ---
 
@@ -149,6 +153,11 @@ queueing arithmetic stops being a design input at all.
 
 ### 2.4 Exit criteria
 
+**Status (2026-09-26): §2.1, §2.2 and §3 done; §2.3 blocked on a host. Results,
+commands and raw logs in `gate1-runbook.md` + `gate1/`.** C = 6 (host-specific),
+baseline re-measured at 14.2 s/query, and **both cheap alternatives in §3 were
+REJECTED by the bar below** — so the hardware decision now rests on §2.3 alone.
+
 - **C measured**, with the seconds-vs-threads curve recorded in this file.
 - **GPU latency measured** on real pairs, and ranking compared to the CPU-INT8
   baseline using the established bar: top-3 ordered-identical, top-6 Jaccard ≥ 0.83.
@@ -172,6 +181,19 @@ actually reach the cap before trimming), 11 s could become 4–5 s. At 4 s a sin
 
 Same fixture, same bar. Run it alongside §2.3 — the two are independent and the
 cheaper one winning is the best outcome available.
+
+**Outcome (measured, `gate1-runbook.md`): both cheap levers lost.**
+`bge-reranker-base` is **3.3x faster (4.33 s/query) but fails** — top-3 identical on
+0 of 7 queries, Jaccard 0.00 on one, oracle-confirmed regressions on 4 of 7, and a
+control margin that shrinks from −5.60 to −3.86. The `max_length` review came back
+**negative as a lever** (p50 = 100 tokens, only 1 pair in 320 reaches the 512 cap) —
+but it exposed a different one: the tokenizer pads to batch-longest, so 40 mixed-
+length pairs all compute at ~500 tokens. **Length-bucketing cuts padding to 38% and
+is 2.86x faster, and it also fails the bar** — not because padding matters (masked
+attention cannot see it) but because `quantize_dynamic` recomputes activation scales
+per batch, moving scores up to 1.41 logits. That points at a real follow-up:
+**static/calibrated INT8 would make bucketing numerically inert and its 2.86x free**
+(Gate 2 candidate; the §2.2 fixture is a ready calibration set).
 
 ---
 
@@ -395,6 +417,8 @@ health-check target; `/mcp` stays streamable HTTP with a bearer header.
 1. **Request the GPU quota** (other repo) — do this first; it gates §2.3 by days.
 2. **Gate 1** on today's image: thread-scaling (§2.1), fixture dump (§2.2), GPU probe
    (§2.3) and the smaller-reranker probe (§3) in parallel. **Decide the hardware.**
+   — *§2.1, §2.2, §3 DONE 2026-09-26 (`gate1-runbook.md`); §2.3 pending a host, and
+   it is now the only remaining candidate for a large win.*
 3. **The upgrade** (§4) on this branch: pins, Tier 1+2 enrichment, the `parse.py:83`
    comment fix, the §4.2 invariant recorded.
 4. **Gate 2** (§5): embed determinism, reranker A/B, first-stage sanity, cost refresh
@@ -445,6 +469,8 @@ Recorded so a future reader does not have to re-derive them:
 | fastmcp 3.x offloads sync tools by default | 3.4.2 `tools/function_tool.py:89` (`run_in_thread: bool = True`), `:332` | same, against a 3.x install |
 | `stateless_http` exists in 2.14.7 | `server/server.py:2586-2632` | as above, on `FastMCP.http_app` |
 | `onnxruntime-gpu` has no aarch64 wheels before 1.29.0 | PyPI release files: 1.20.x = `manylinux*_x86_64` + `win_amd64` only; first `manylinux_2_34_aarch64` at 1.29.0 (cp311 present) | `curl -s https://pypi.org/pypi/onnxruntime-gpu/json` and filter filenames |
-| Rerank is ~270 ms/pair, latency ≈ `top_n × 270 ms` | `bench_search.py` on vhost2 **(measured)** | `sudo docker exec -i docs-bridge python - < tools/eval/bench_search.py` |
+| Rerank is **~354 ms/pair**, latency ≈ `top_n × 354 ms` = **14.2 s** at `top_n=40` | `dump_rerank_fixture.py` on vhost2, 320 real pairs **(measured 2026-09-26; supersedes bench_search.py's ~270 ms)** | step 1 of `gate1-runbook.md` |
+| Pair lengths are p50=100 / p95=420, and only 0.3% reach `max_length=512`; the tokenizer pads to batch-longest, so all 40 compute at ~500 | `dump_rerank_fixture.py` + `rerank_batching.py` **(measured)** | steps 1 and 2b of `gate1-runbook.md` |
+| INT8 activation scales are batch-dependent, so re-batching moves scores up to 1.41 logits | `rerank_batching.py`, `rerank_ab.py --bucket` **(measured)** | step 4c of `gate1-runbook.md` |
 | `top_n` cannot be lowered | `recall_topn.py`, `validate_union.py` **(measured)** | re-run after any chunker change (§5.3) |
-| C (cores per query) | **not yet measured** | §2.1 — the first thing this plan does |
+| C (cores per query) | **6 on vhost2** — near-linear to 6 (efficiency 0.91), then *reverses*: 8 and 10 threads are slower, because 6 = the M2 Pro's P-core count **(measured)** | `thread_scaling.py`; **re-run on the x86 target — C=6 is silicon-specific and must not size EC2** |

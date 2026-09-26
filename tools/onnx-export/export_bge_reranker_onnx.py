@@ -10,6 +10,15 @@ Run (on a >=16GB host — the M2; the 8GB Pi OOMs on quantize):
     python tools/export_bge_reranker_onnx.py --out /opt/bge-reranker-onnx
     python tools/export_bge_reranker_onnx.py --out /opt/bge-reranker-onnx --quantize-only
 
+`--model-id` exports a DIFFERENT cross-encoder into the same dir layout, which is
+what prices the cheap alternative to new hardware (multi-user-rollout-plan §3):
+bge-reranker-base is ~278M against v2-m3's ~568M, so roughly 2x faster on the same
+CPU with no architecture change. Both are XLM-R, so the tokenizer pair
+post-processor and the single-logit head are unchanged:
+
+    python tools/onnx-export/export_bge_reranker_onnx.py \
+        --model-id BAAI/bge-reranker-base --out /opt/bge-reranker-base-onnx --quantize
+
 Outputs in --out:
     model.onnx          full-precision cross-encoder (logits)
     model.int8.onnx     dynamic-INT8 copy               (with --quantize/-only)
@@ -24,7 +33,7 @@ import json
 import os
 import shutil
 
-MODEL_ID = "BAAI/bge-reranker-v2-m3"
+DEFAULT_MODEL_ID = "BAAI/bge-reranker-v2-m3"
 OPSET = 17
 
 
@@ -42,11 +51,11 @@ def _quantize(out_dir: str) -> None:
     )
 
 
-def _write_meta(out_dir: str, revision: str, quantized: bool) -> None:
+def _write_meta(out_dir: str, model_id: str, revision: str, quantized: bool) -> None:
     print("[meta] writing meta.json ...")
     json.dump(
         {
-            "model_id": MODEL_ID,
+            "model_id": model_id,
             "revision": revision,
             "opset": OPSET,
             "head": "sequence-classification, 1 logit per (query, passage) pair",
@@ -60,6 +69,10 @@ def _write_meta(out_dir: str, revision: str, quantized: bool) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", required=True, help="output model dir")
+    ap.add_argument("--model-id", default=DEFAULT_MODEL_ID,
+                    help="HF cross-encoder to export (default: %(default)s). Any "
+                         "single-logit sequence-classification reranker works; the "
+                         "output dir layout is what OnnxReranker loads.")
     ap.add_argument("--revision", default="main", help="HF revision/commit to pin")
     ap.add_argument("--quantize", action="store_true",
                     help="also write model.int8.onnx in THIS process (fine on >=16GB hosts)")
@@ -74,43 +87,60 @@ def main() -> int:
     # Torch-free quantize path: assumes a prior `--out <dir>` export wrote model.onnx.
     if args.quantize_only:
         _quantize(args.out)
-        _write_meta(args.out, args.revision, quantized=True)
+        _write_meta(args.out, args.model_id, args.revision, quantized=True)
         print(f"done (quantize-only) -> {args.out}")
         return 0
 
     # 1. Export the XLM-R sequence-classification model to ONNX. We wrap it to emit
     #    ONLY logits (the relevance score); the pair tokenization is applied at
     #    runtime by OnnxReranker via the saved tokenizer.json post-processor.
-    print(f"[1/2] exporting {MODEL_ID}@{args.revision} cross-encoder -> ONNX ...")
+    print(f"[1/2] exporting {args.model_id}@{args.revision} cross-encoder -> ONNX ...")
     import torch
     from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
     model = AutoModelForSequenceClassification.from_pretrained(
-        MODEL_ID, revision=args.revision
+        args.model_id, revision=args.revision
     ).eval()
-    tok = AutoTokenizer.from_pretrained(MODEL_ID, revision=args.revision)
+    tok = AutoTokenizer.from_pretrained(args.model_id, revision=args.revision)
     tok.save_pretrained(args.out)  # writes tokenizer.json (fast tokenizer)
 
+    # Segment ids: XLM-R (v2-m3 AND bge-reranker-base) has type_vocab_size == 1, so
+    # they carry no information and the graph stays a two-input one -- byte-identical
+    # to every export before this flag existed. A BERT-family cross-encoder encodes
+    # the passage as segment B, and omitting that input would silently degrade every
+    # pair score instead of failing, so export it when the model actually uses it.
+    use_types = getattr(model.config, "type_vocab_size", 1) > 1
+    print(f"[1/2] token_type_ids: {'exported' if use_types else 'omitted'} "
+          f"(type_vocab_size={getattr(model.config, 'type_vocab_size', 1)})")
+
     class _Scorer(torch.nn.Module):
-        def __init__(self, m: torch.nn.Module) -> None:
+        def __init__(self, m: torch.nn.Module, types: bool) -> None:
             super().__init__()
             self.m = m
+            self.types = types
 
-        def forward(self, input_ids, attention_mask):  # noqa: ANN001
+        def forward(self, input_ids, attention_mask, token_type_ids=None):  # noqa: ANN001
+            if self.types:
+                return self.m(input_ids=input_ids, attention_mask=attention_mask,
+                              token_type_ids=token_type_ids).logits
             return self.m(input_ids=input_ids, attention_mask=attention_mask).logits
 
     enc = tok(["query probe"], ["passage probe"], return_tensors="pt", padding=True)
+    names = ["input_ids", "attention_mask"]
+    inputs = [enc["input_ids"], enc["attention_mask"]]
+    if use_types:
+        names.append("token_type_ids")
+        inputs.append(enc.get("token_type_ids", torch.zeros_like(enc["input_ids"])))
     onnx_path = os.path.join(args.out, "model.onnx")
     with torch.no_grad():
         torch.onnx.export(
-            _Scorer(model),
-            (enc["input_ids"], enc["attention_mask"]),
+            _Scorer(model, use_types),
+            tuple(inputs),
             onnx_path,
-            input_names=["input_ids", "attention_mask"],
+            input_names=names,
             output_names=["logits"],
             dynamic_axes={
-                "input_ids": {0: "batch", 1: "seq"},
-                "attention_mask": {0: "batch", 1: "seq"},
+                **{n: {0: "batch", 1: "seq"} for n in names},
                 "logits": {0: "batch"},
             },
             opset_version=OPSET,
@@ -122,7 +152,10 @@ def main() -> int:
     if not os.path.exists(tok_json):
         from huggingface_hub import hf_hub_download
 
-        shutil.copy(hf_hub_download(MODEL_ID, "tokenizer.json", revision=args.revision), tok_json)
+        shutil.copy(
+            hf_hub_download(args.model_id, "tokenizer.json", revision=args.revision),
+            tok_json,
+        )
 
     # Release the torch model before any in-process quantize (prefer two processes
     # on small hosts: a plain export then a separate `--quantize-only`).
@@ -136,7 +169,7 @@ def main() -> int:
     else:
         print("[quantize] skipping INT8 (no --quantize)")
 
-    _write_meta(args.out, args.revision, quantized=args.quantize)
+    _write_meta(args.out, args.model_id, args.revision, quantized=args.quantize)
     print(f"done -> {args.out}")
     return 0
 

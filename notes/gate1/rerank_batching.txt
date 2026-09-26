@@ -1,0 +1,18 @@
+
+rerank batching | fixture=/out/fixture.json top_n=40 k=6 max_length=512 int8=True
+  queries=8 buckets=[4, 8, 16, 40] repeats=2
+  baseline recorded in fixture: 14.17 s/query (354 ms/pair)
+
+ bucket  s/query  speedup    padTok  padRatio  maxDelta  top-k moved  top-3 moved
+---------------------------------------------------------------------------------
+      4     4.93    2.86x     54832      0.38    1.4126          6/8          5/8
+      8     5.80    2.43x     63408      0.44    1.0259          6/8          5/8
+     16     6.76    2.08x     73536      0.51    1.0057          6/8          4/8
+     40    14.10    1.00x    142800      1.00    0.0000          0/8          0/8
+
+one batch of 40 (today): 14.08 s/query
+fastest bucket: 4 at 4.93 s/query (2.86x), padding cut to 38%
+fastest bucket that moved NO ranking: 40 at 14.10 s/query (1.00x), max score delta 0.0000
+  => at top_n=40 a search's rerank drops 14.1s -> 14.1s with no model, no hardware and no quality change.
+
+json: {"top_n": 40, "k": 6, "repeats": 2, "base_s_per_query": 14.083145217737183, "rows": [{"bucket": 4, "s_per_query": 4.928632390219718, "speedup": 2.857414410878665, "padded_tokens": 54832, "pad_ratio": 0.38397759103641455, "max_delta": 1.412581443786621, "topk_moved": 6, "top3_moved": 5, "queries": 8}, {"bucket": 8, "s_per_query": 5.800572993350215, "speedup": 2.427888629947786, "padded_tokens": 63408, "pad_ratio": 0.4440336134453782, "max_delta": 1.025918960571289, "topk_moved": 6, "top3_moved": 5, "queries": 8}, {"bucket": 16, "s_per_query": 6.758572322898544, "speedup": 2.083745581891969, "padded_tokens": 73536, "pad_ratio": 0.5149579831932773, "max_delta": 1.0056588649749756, "topk_moved": 6, "top3_moved": 4, "queries": 8}, {"bucket": 40, "s_per_query": 14.0966703039594, "speedup": 0.9990405474533643, "padded_tokens": 142800, "pad_ratio": 1.0, "max_delta": 0.0, "topk_moved": 0, "top3_moved": 0, "queries": 8}]}

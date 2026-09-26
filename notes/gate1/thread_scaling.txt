@@ -1,0 +1,30 @@
+
+thread scaling | host cores=10 pairs=40 max_length=512 int8=True
+  batch source: fixture /out/fixture.json (query 1)
+  query: How do we read properties of a Teamcenter relation?
+  sweep: [1, 2, 3, 4, 6, 8, 10]  repeats<=3 budget=60s/N
+  thread env: {none set}
+  baseline threads in process (before any session): 1
+
+ threads  runs  median s    min s  ms/pair  speedup  marginal  effic  procThr  RSS MB
+-------------------------------------------------------------------------------------
+       1     2     50.91    50.88   1272.7     1.00x       n/a   1.00       20    2579
+       2     3     25.86    25.78    646.4     1.97x     96.9%   0.98       21    2600
+       3     3     17.58    17.56    439.5     2.90x     47.1%   0.97       22    2603
+       4     3     13.43    13.32    335.7     3.79x     30.9%   0.95       23    2657
+       6     3      9.33     9.32    233.2     5.46x     44.0%   0.91       25    2634
+       8     3     11.05    10.98    276.3     4.61x    -15.6%   0.58       27    2604
+      10     3     10.88    10.34    272.0     4.68x      1.6%   0.47       29    2671
+
+best latency in sweep: 9.33 s  (at 6 threads)
+C = 6 cores  — smallest thread count within 5% of best (9.33 s, 233.2 ms/pair)
+    cross-check: first N whose next step gained < 5% => C = 6
+
+implied capacity at C (rerank only, ignoring embed+retrieve):
+  vCPU  permits  concurrent  searches/hr
+     4        1           1          386
+     8        1           1          386
+    16        2           2          772
+    32        5           5         1930
+
+json: {"host_cores": 10, "pairs": 40, "top_n": 40, "max_length": 512, "int8": true, "knee_tol": 0.05, "C": 6, "C_marginal": 6, "best_s": 9.326981849968433, "at_C_s": 9.326981849968433, "rows": [{"threads": 1, "runs": 2, "median_s": 50.90926313959062, "min_s": 50.87667053192854, "ms_per_pair": 1272.7315784897655, "speedup_vs_1": 1.0, "marginal_gain_pct": null, "efficiency": 1.0, "process_threads": 20, "rss_mb": 2578.515625, "top_score": 4.099844932556152}, {"threads": 2, "runs": 3, "median_s": 25.856591189280152, "min_s": 25.782379999756813, "ms_per_pair": 646.4147797320038, "speedup_vs_1": 1.9689085373595967, "marginal_gain_pct": 96.89085373595967, "efficiency": 0.9844542686797983, "process_threads": 21, "rss_mb": 2599.609375, "top_score": 4.099844932556152}, {"threads": 3, "runs": 3, "median_s": 17.580235611647367, "min_s": 17.563073612749577, "ms_per_pair": 439.5058902911842, "speedup_vs_1": 2.89582371159246, "marginal_gain_pct": 47.07761466034894, "efficiency": 0.96527457053082, "process_threads": 22, "rss_mb": 2602.9375, "top_score": 4.099844932556152}, {"threads": 4, "runs": 3, "median_s": 13.429590728133917, "min_s": 13.31970795802772, "ms_per_pair": 335.7397682033479, "speedup_vs_1": 3.79082759632725, "marginal_gain_pct": 30.906711660379816, "efficiency": 0.9477068990818125, "process_threads": 23, "rss_mb": 2657.484375, "top_score": 4.099844932556152}, {"threads": 6, "runs": 3, "median_s": 9.326981849968433, "min_s": 9.324912937358022, "ms_per_pair": 233.17454624921083, "speedup_vs_1": 5.4582783539739514, "marginal_gain_pct": 43.986457185819106, "efficiency": 0.9097130589956586, "process_threads": 25, "rss_mb": 2633.734375, "top_score": 4.099844932556152}, {"threads": 8, "runs": 3, "median_s": 11.053809447214007, "min_s": 10.98314749635756, "ms_per_pair": 276.3452361803502, "speedup_vs_1": 4.605585376037195, "marginal_gain_pct": -15.62201343791757, "efficiency": 0.5756981720046493, "process_threads": 27, "rss_mb": 2603.59375, "top_score": 4.099844932556152}, {"threads": 10, "runs": 3, "median_s": 10.87915825471282, "min_s": 10.342716749757528, "ms_per_pair": 271.9789563678205, "speedup_vs_1": 4.679522252333895, "marginal_gain_pct": 1.6053741329254745, "efficiency": 0.4679522252333895, "process_threads": 29, "rss_mb": 2670.859375, "top_score": 4.099844932556152}]}

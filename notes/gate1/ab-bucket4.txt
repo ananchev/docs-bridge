@@ -1,0 +1,60 @@
+
+rerank A/B | fixture=/out/fixture.json
+  baseline:  onnx-cpu-int8 (BAAI/bge-reranker-v2-m3) on f6b1bd1e525a [aarch64, 10 cores], 354 ms/pair
+  candidate: onnx int8 on CPUExecutionProvider (BAAI/bge-reranker-v2-m3) + length-bucketed sub-batches of 4
+  top_n=40 k=6 max_length=512 oracle_pool=80 queries=8
+  bar: top-3 ordered-identical AND top-6 Jaccard >= 0.83
+
+  warm-up (8 pairs, includes any lazy init): 0.87 s
+
+query                                           s  ms/pr  spdup  top3  jacc  goldA  goldB    maxS
+-------------------------------------------------------------------------------------------------
+How do we read properties of a Teamcenter    4.42  110.6   3.1x   yes  1.00   1.00   1.00    4.25
+How to read BOM data from Teamcenter in A    7.11  177.8   2.1x   yes  1.00   1.00   1.00    3.85
+How to send an email from T4X?               5.32  133.0   2.5x    NO  1.00   1.00   1.00    2.59
+How does SAP distinguish if a BOM line wa    5.85  146.4   2.5x   yes  0.50   0.67   0.67    6.34
+How do we update basic unit of measure in    6.27  156.8   2.2x    NO  0.71   1.00   1.00    2.55
+TC_transfer_area site preference             4.51  112.7   3.7x    NO  0.50   0.67   0.67    3.95
+EPM_attach_related_objects                   3.74   93.6   3.5x    NO  0.71   1.00   1.00    5.28
+how to bake sourdough bread                  2.05   51.2   6.5x    NO  0.71   0.83   0.83   -6.02
+
+speed: 133.0 ms/pair median (2.5x the baseline's 354 ms/pair)
+       => 5.32 s per search at top_n=40, 7.98 s at multi_top_n=60
+
+DIFFERS from baseline on 5/7 queries — adjudicating with the deep-pool oracle:
+
+  How to send an email from T4X?
+    top-3 identical: False  jaccard: 1.00
+    gold (baseline's deep top-6, 4 of which are in the reranked 40): candidate recalls 1.00 vs baseline 1.00
+    gold (candidate's deep top-6, 4 in the reranked set): candidate recalls 1.00 vs baseline 1.00
+    -> IMPROVEMENT or tie (accept)
+
+  How does SAP distinguish if a BOM line was created in SAP or via an ex
+    top-3 identical: True  jaccard: 0.50
+    gold (baseline's deep top-6, 6 of which are in the reranked 40): candidate recalls 0.67 vs baseline 1.00
+    gold (candidate's deep top-6, 6 in the reranked set): candidate recalls 0.67 vs baseline 0.83
+    -> REGRESSION (reject)
+
+  How do we update basic unit of measure in SAP?
+    top-3 identical: False  jaccard: 0.71
+    gold (baseline's deep top-6, 5 of which are in the reranked 40): candidate recalls 1.00 vs baseline 1.00
+    gold (candidate's deep top-6, 5 in the reranked set): candidate recalls 1.00 vs baseline 1.00
+    -> IMPROVEMENT or tie (accept)
+
+  TC_transfer_area site preference
+    top-3 identical: False  jaccard: 0.50
+    gold (baseline's deep top-6, 6 of which are in the reranked 40): candidate recalls 0.67 vs baseline 1.00
+    gold (candidate's deep top-6, 6 in the reranked set): candidate recalls 0.67 vs baseline 0.67
+    -> REGRESSION (reject)
+
+  EPM_attach_related_objects
+    top-3 identical: False  jaccard: 0.71
+    gold (baseline's deep top-6, 2 of which are in the reranked 40): candidate recalls 1.00 vs baseline 1.00
+    gold (candidate's deep top-6, 2 in the reranked set): candidate recalls 1.00 vs baseline 1.00
+    -> IMPROVEMENT or tie (accept)
+
+VERDICT: FAIL
+  - oracle-confirmed regression on: How does SAP distinguish if a BOM line was created in SAP or
+  - oracle-confirmed regression on: TC_transfer_area site preference
+
+wrote /out/ab-bucket4.json

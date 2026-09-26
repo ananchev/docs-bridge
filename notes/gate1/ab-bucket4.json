@@ -1,0 +1,488 @@
+{
+  "candidate": "onnx int8 on CPUExecutionProvider (BAAI/bge-reranker-v2-m3) + length-bucketed sub-batches of 4",
+  "backend": "onnx",
+  "device": "cpu",
+  "precision": "int8",
+  "model_dir": null,
+  "model_id": "BAAI/bge-reranker-v2-m3",
+  "bucket": 4,
+  "host": "cdea0d5240e4",
+  "machine": "aarch64",
+  "fixture_meta": {
+    "purpose": "Gate 1 \u00a72.2 rerank fixture \u2014 baseline = CPU INT8, this host",
+    "created_utc": "2026-09-26T20:11:58Z",
+    "host": "f6b1bd1e525a",
+    "machine": "aarch64",
+    "cpu_count": 10,
+    "python": "3.11.16",
+    "subject": "teamcenter",
+    "collection": "teamcenter",
+    "collection_points": 138550,
+    "top_n": 40,
+    "prefetch_limit": 50,
+    "oracle_pool": 80,
+    "oracle_prefetch": 128,
+    "default_k": 6,
+    "baseline": {
+      "kind": "onnx-cpu-int8",
+      "model_dir": "/opt/bge-reranker-onnx",
+      "int8": true,
+      "max_length": 512,
+      "model_meta": {
+        "model_id": "BAAI/bge-reranker-v2-m3",
+        "revision": "main",
+        "opset": 17,
+        "head": "sequence-classification, 1 logit per (query, passage) pair",
+        "quantized": true
+      }
+    },
+    "embedder": {
+      "model": "BAAI/bge-m3",
+      "backend": "onnx",
+      "int8": true,
+      "mean_ms": 132.79836811125278
+    },
+    "timing": {
+      "queries": 8,
+      "production_pairs": 320,
+      "rerank_s_total": 113.37866085767746,
+      "rerank_s_mean_per_query": 14.172332607209682,
+      "rerank_ms_per_pair": 354.30831518024206
+    },
+    "pair_tokens": {
+      "n": 320,
+      "cap": 512,
+      "at_cap": 1,
+      "at_cap_pct": 0.3125,
+      "p50": 100,
+      "p90": 385,
+      "p95": 420,
+      "max": 512
+    }
+  },
+  "verdict": "FAIL",
+  "failures": [
+    "oracle-confirmed regression on: How does SAP distinguish if a BOM line was created in SAP or",
+    "oracle-confirmed regression on: TC_transfer_area site preference"
+  ],
+  "median_ms_per_pair": 132.99955332186073,
+  "median_speedup": 2.5328113244368127,
+  "queries": [
+    {
+      "query": "How do we read properties of a Teamcenter relation?",
+      "control": false,
+      "pairs": 40,
+      "median_s": 4.422544374130666,
+      "ms_per_pair": 110.56360935326666,
+      "speedup_vs_baseline": 3.126111312044412,
+      "top3_identical": true,
+      "jaccard": 1.0,
+      "baseline_top": [
+        "b51a5332-743e-53d1-805e-33d984ff18c1",
+        "c46916bd-43a8-5b1c-bb56-2763211986ac",
+        "9ad5b1a8-c8fd-5fc1-8620-3ef8025c79b8",
+        "bb255149-0289-5d32-99a0-20bd00e4d0b9",
+        "691aa519-b90d-5bb0-85b7-f609a427179e",
+        "d5aa5983-1c0d-5567-a861-340233206d6a"
+      ],
+      "candidate_top": [
+        "b51a5332-743e-53d1-805e-33d984ff18c1",
+        "c46916bd-43a8-5b1c-bb56-2763211986ac",
+        "9ad5b1a8-c8fd-5fc1-8620-3ef8025c79b8",
+        "bb255149-0289-5d32-99a0-20bd00e4d0b9",
+        "691aa519-b90d-5bb0-85b7-f609a427179e",
+        "d5aa5983-1c0d-5567-a861-340233206d6a"
+      ],
+      "baseline_max": 4.099844932556152,
+      "candidate_max": 4.245071887969971,
+      "oracle": {
+        "gold_baseline_deep": [
+          "c46916bd-43a8-5b1c-bb56-2763211986ac",
+          "b51a5332-743e-53d1-805e-33d984ff18c1",
+          "9ad5b1a8-c8fd-5fc1-8620-3ef8025c79b8",
+          "bb255149-0289-5d32-99a0-20bd00e4d0b9",
+          "691aa519-b90d-5bb0-85b7-f609a427179e",
+          "f46b79e9-b844-5de9-a149-a3ede1c39b47"
+        ],
+        "gold_candidate_deep": [
+          "c46916bd-43a8-5b1c-bb56-2763211986ac",
+          "b51a5332-743e-53d1-805e-33d984ff18c1",
+          "9ad5b1a8-c8fd-5fc1-8620-3ef8025c79b8",
+          "bb255149-0289-5d32-99a0-20bd00e4d0b9",
+          "691aa519-b90d-5bb0-85b7-f609a427179e",
+          "d5aa5983-1c0d-5567-a861-340233206d6a"
+        ],
+        "gold_baseline_in_prod": 5,
+        "gold_candidate_in_prod": 6,
+        "base_recall_goldA": 1.0,
+        "base_recall_goldB": 1.0,
+        "cand_recall_goldA": 1.0,
+        "cand_recall_goldB": 1.0
+      }
+    },
+    {
+      "query": "How to read BOM data from Teamcenter in AIG",
+      "control": false,
+      "pairs": 40,
+      "median_s": 7.111940826289356,
+      "ms_per_pair": 177.7985206572339,
+      "speedup_vs_baseline": 2.0622313253853957,
+      "top3_identical": true,
+      "jaccard": 1.0,
+      "baseline_top": [
+        "d420ab3d-4bc1-5779-8bf9-35b1c7da9f0d",
+        "4f3264d8-adbe-5887-ae4a-91808df1cc89",
+        "552545c9-a629-54fb-b66c-d6a58c4a663d",
+        "2db6c21c-13df-5284-95f9-8b3e3db9b32f",
+        "eeffec84-152e-58ad-9b4f-6687699ae0c1",
+        "a1056256-9713-598b-9d13-4ba32a8e3791"
+      ],
+      "candidate_top": [
+        "d420ab3d-4bc1-5779-8bf9-35b1c7da9f0d",
+        "4f3264d8-adbe-5887-ae4a-91808df1cc89",
+        "552545c9-a629-54fb-b66c-d6a58c4a663d",
+        "2db6c21c-13df-5284-95f9-8b3e3db9b32f",
+        "eeffec84-152e-58ad-9b4f-6687699ae0c1",
+        "a1056256-9713-598b-9d13-4ba32a8e3791"
+      ],
+      "baseline_max": 3.997178792953491,
+      "candidate_max": 3.854813814163208,
+      "oracle": {
+        "gold_baseline_deep": [
+          "d420ab3d-4bc1-5779-8bf9-35b1c7da9f0d",
+          "a66e4679-a97b-59d9-9906-9b7da5eae2f5",
+          "4f3264d8-adbe-5887-ae4a-91808df1cc89",
+          "552545c9-a629-54fb-b66c-d6a58c4a663d",
+          "6b84c2e2-23d9-5beb-8353-406a9d5835ff",
+          "2db6c21c-13df-5284-95f9-8b3e3db9b32f"
+        ],
+        "gold_candidate_deep": [
+          "a66e4679-a97b-59d9-9906-9b7da5eae2f5",
+          "d420ab3d-4bc1-5779-8bf9-35b1c7da9f0d",
+          "4f3264d8-adbe-5887-ae4a-91808df1cc89",
+          "552545c9-a629-54fb-b66c-d6a58c4a663d",
+          "2db6c21c-13df-5284-95f9-8b3e3db9b32f",
+          "19110fdf-62fd-5d85-b8c9-b659b44a8fad"
+        ],
+        "gold_baseline_in_prod": 4,
+        "gold_candidate_in_prod": 4,
+        "base_recall_goldA": 1.0,
+        "base_recall_goldB": 1.0,
+        "cand_recall_goldA": 1.0,
+        "cand_recall_goldB": 1.0
+      }
+    },
+    {
+      "query": "How to send an email from T4X?",
+      "control": false,
+      "pairs": 40,
+      "median_s": 5.319982132874429,
+      "ms_per_pair": 132.99955332186073,
+      "speedup_vs_baseline": 2.5328113244368127,
+      "top3_identical": false,
+      "jaccard": 1.0,
+      "baseline_top": [
+        "76644297-18f6-5c97-86e6-8953fc03713b",
+        "131e7c9e-a126-5e3d-97fd-c584d0cc4d3b",
+        "fbdcbb48-66ac-5df9-9c1f-ba15646c4b0d",
+        "5632b9ff-9e47-58d8-8c64-bf6873be2b58",
+        "8b0c60cb-ad78-5a0c-99a2-9a00e55ded71",
+        "5a7b97a2-208f-51fa-a103-6acf8df1b160"
+      ],
+      "candidate_top": [
+        "131e7c9e-a126-5e3d-97fd-c584d0cc4d3b",
+        "76644297-18f6-5c97-86e6-8953fc03713b",
+        "5632b9ff-9e47-58d8-8c64-bf6873be2b58",
+        "fbdcbb48-66ac-5df9-9c1f-ba15646c4b0d",
+        "5a7b97a2-208f-51fa-a103-6acf8df1b160",
+        "8b0c60cb-ad78-5a0c-99a2-9a00e55ded71"
+      ],
+      "baseline_max": 2.9990806579589844,
+      "candidate_max": 2.5941994190216064,
+      "oracle": {
+        "gold_baseline_deep": [
+          "76644297-18f6-5c97-86e6-8953fc03713b",
+          "131e7c9e-a126-5e3d-97fd-c584d0cc4d3b",
+          "98174c87-7f46-5c2e-963c-a419a644d345",
+          "33b8ef15-ced6-51d8-978c-25decd763ea7",
+          "fbdcbb48-66ac-5df9-9c1f-ba15646c4b0d",
+          "5632b9ff-9e47-58d8-8c64-bf6873be2b58"
+        ],
+        "gold_candidate_deep": [
+          "98174c87-7f46-5c2e-963c-a419a644d345",
+          "33b8ef15-ced6-51d8-978c-25decd763ea7",
+          "76644297-18f6-5c97-86e6-8953fc03713b",
+          "131e7c9e-a126-5e3d-97fd-c584d0cc4d3b",
+          "8b0c60cb-ad78-5a0c-99a2-9a00e55ded71",
+          "5a7b97a2-208f-51fa-a103-6acf8df1b160"
+        ],
+        "gold_baseline_in_prod": 4,
+        "gold_candidate_in_prod": 4,
+        "base_recall_goldA": 1.0,
+        "base_recall_goldB": 1.0,
+        "cand_recall_goldA": 1.0,
+        "cand_recall_goldB": 1.0
+      }
+    },
+    {
+      "query": "How does SAP distinguish if a BOM line was created in SAP or via an external system?",
+      "control": false,
+      "pairs": 40,
+      "median_s": 5.854709319770336,
+      "ms_per_pair": 146.3677329942584,
+      "speedup_vs_baseline": 2.4566467691673886,
+      "top3_identical": true,
+      "jaccard": 0.5,
+      "baseline_top": [
+        "572ea403-b353-5b4d-bd96-e23088c19ad6",
+        "3ec24144-d89d-578c-ac56-443d3b6e117d",
+        "3ff9e265-fe9e-5beb-8867-8667d4005524",
+        "046f0c4e-4d21-532a-8157-2ae3e5697b2a",
+        "22c83486-040f-51a4-9d9e-b39c6c192b55",
+        "f1c81d03-2010-5700-9ca7-e94a0dee29f6"
+      ],
+      "candidate_top": [
+        "572ea403-b353-5b4d-bd96-e23088c19ad6",
+        "3ec24144-d89d-578c-ac56-443d3b6e117d",
+        "3ff9e265-fe9e-5beb-8867-8667d4005524",
+        "046f0c4e-4d21-532a-8157-2ae3e5697b2a",
+        "327e0a7c-56f5-5ed9-95ad-47598133b9b5",
+        "2ad8c4d9-8ee0-5818-871b-da7e7f7eb553"
+      ],
+      "baseline_max": 6.1374664306640625,
+      "candidate_max": 6.3401055335998535,
+      "oracle": {
+        "gold_baseline_deep": [
+          "572ea403-b353-5b4d-bd96-e23088c19ad6",
+          "3ec24144-d89d-578c-ac56-443d3b6e117d",
+          "3ff9e265-fe9e-5beb-8867-8667d4005524",
+          "046f0c4e-4d21-532a-8157-2ae3e5697b2a",
+          "22c83486-040f-51a4-9d9e-b39c6c192b55",
+          "f1c81d03-2010-5700-9ca7-e94a0dee29f6"
+        ],
+        "gold_candidate_deep": [
+          "572ea403-b353-5b4d-bd96-e23088c19ad6",
+          "3ec24144-d89d-578c-ac56-443d3b6e117d",
+          "3ff9e265-fe9e-5beb-8867-8667d4005524",
+          "046f0c4e-4d21-532a-8157-2ae3e5697b2a",
+          "22c83486-040f-51a4-9d9e-b39c6c192b55",
+          "908c3bfc-e7da-55e7-ae7c-db7cd395d8c2"
+        ],
+        "gold_baseline_in_prod": 6,
+        "gold_candidate_in_prod": 6,
+        "base_recall_goldA": 1.0,
+        "base_recall_goldB": 0.8333333333333334,
+        "cand_recall_goldA": 0.6666666666666666,
+        "cand_recall_goldB": 0.6666666666666666
+      }
+    },
+    {
+      "query": "How do we update basic unit of measure in SAP?",
+      "control": false,
+      "pairs": 40,
+      "median_s": 6.27340008597821,
+      "ms_per_pair": 156.83500214945525,
+      "speedup_vs_baseline": 2.246391917566954,
+      "top3_identical": false,
+      "jaccard": 0.7142857142857143,
+      "baseline_top": [
+        "5759fde6-4d57-5b77-a563-1d20bb637f90",
+        "c05d3c62-90ba-5f63-916c-3112e3571885",
+        "cf46fe40-84f2-5ca4-bafe-3f1720067273",
+        "0a80366a-205f-5d44-aa6c-10a093a9fbdc",
+        "3e05702a-9ff0-5d8b-bb07-e12cf843d76b",
+        "0f8479d8-284e-5c8a-8db1-6017f4c66cff"
+      ],
+      "candidate_top": [
+        "5759fde6-4d57-5b77-a563-1d20bb637f90",
+        "c05d3c62-90ba-5f63-916c-3112e3571885",
+        "0a80366a-205f-5d44-aa6c-10a093a9fbdc",
+        "cf46fe40-84f2-5ca4-bafe-3f1720067273",
+        "d2021721-36ba-5243-bf27-347c2e5863c8",
+        "3e05702a-9ff0-5d8b-bb07-e12cf843d76b"
+      ],
+      "baseline_max": 2.284499406814575,
+      "candidate_max": 2.547484874725342,
+      "oracle": {
+        "gold_baseline_deep": [
+          "5759fde6-4d57-5b77-a563-1d20bb637f90",
+          "c05d3c62-90ba-5f63-916c-3112e3571885",
+          "1feb5011-d3f4-594a-92c5-3e2558c586dc",
+          "cf46fe40-84f2-5ca4-bafe-3f1720067273",
+          "0a80366a-205f-5d44-aa6c-10a093a9fbdc",
+          "3e05702a-9ff0-5d8b-bb07-e12cf843d76b"
+        ],
+        "gold_candidate_deep": [
+          "5759fde6-4d57-5b77-a563-1d20bb637f90",
+          "c05d3c62-90ba-5f63-916c-3112e3571885",
+          "0a80366a-205f-5d44-aa6c-10a093a9fbdc",
+          "cf46fe40-84f2-5ca4-bafe-3f1720067273",
+          "1feb5011-d3f4-594a-92c5-3e2558c586dc",
+          "3e05702a-9ff0-5d8b-bb07-e12cf843d76b"
+        ],
+        "gold_baseline_in_prod": 5,
+        "gold_candidate_in_prod": 5,
+        "base_recall_goldA": 1.0,
+        "base_recall_goldB": 1.0,
+        "cand_recall_goldA": 1.0,
+        "cand_recall_goldB": 1.0
+      }
+    },
+    {
+      "query": "TC_transfer_area site preference",
+      "control": false,
+      "pairs": 40,
+      "median_s": 4.506218208000064,
+      "ms_per_pair": 112.6554552000016,
+      "speedup_vs_baseline": 3.675613584410872,
+      "top3_identical": false,
+      "jaccard": 0.5,
+      "baseline_top": [
+        "91343ecf-9a2f-5cbe-9dcd-97da5be5f1ad",
+        "600bde2a-764b-53c2-8c2e-af4326c67a59",
+        "8c8430c2-a4dc-5207-9abc-3460ab26abb0",
+        "7f9016d0-3b8a-5714-955c-0950b8c566e0",
+        "8d6b11da-2365-5b52-a3a0-335b7248a1cc",
+        "1065e5aa-08a9-5518-bff8-5c91da517375"
+      ],
+      "candidate_top": [
+        "8c8430c2-a4dc-5207-9abc-3460ab26abb0",
+        "7f9016d0-3b8a-5714-955c-0950b8c566e0",
+        "91343ecf-9a2f-5cbe-9dcd-97da5be5f1ad",
+        "600bde2a-764b-53c2-8c2e-af4326c67a59",
+        "f8a65bcc-66f7-56e7-ae94-76edcf0f6e9b",
+        "aa1e649b-d86c-5866-8674-9a56c1093a73"
+      ],
+      "baseline_max": 3.8907482624053955,
+      "candidate_max": 3.9549314975738525,
+      "oracle": {
+        "gold_baseline_deep": [
+          "91343ecf-9a2f-5cbe-9dcd-97da5be5f1ad",
+          "600bde2a-764b-53c2-8c2e-af4326c67a59",
+          "8c8430c2-a4dc-5207-9abc-3460ab26abb0",
+          "7f9016d0-3b8a-5714-955c-0950b8c566e0",
+          "8d6b11da-2365-5b52-a3a0-335b7248a1cc",
+          "1065e5aa-08a9-5518-bff8-5c91da517375"
+        ],
+        "gold_candidate_deep": [
+          "8c8430c2-a4dc-5207-9abc-3460ab26abb0",
+          "7f9016d0-3b8a-5714-955c-0950b8c566e0",
+          "91343ecf-9a2f-5cbe-9dcd-97da5be5f1ad",
+          "600bde2a-764b-53c2-8c2e-af4326c67a59",
+          "352d6291-a6e4-57ae-9eba-fefc4c534bd8",
+          "dff3618f-3913-52e2-8089-d45e192f3202"
+        ],
+        "gold_baseline_in_prod": 6,
+        "gold_candidate_in_prod": 6,
+        "base_recall_goldA": 1.0,
+        "base_recall_goldB": 0.6666666666666666,
+        "cand_recall_goldA": 0.6666666666666666,
+        "cand_recall_goldB": 0.6666666666666666
+      }
+    },
+    {
+      "query": "EPM_attach_related_objects",
+      "control": false,
+      "pairs": 40,
+      "median_s": 3.7445476297289133,
+      "ms_per_pair": 93.61369074322283,
+      "speedup_vs_baseline": 3.482890397780787,
+      "top3_identical": false,
+      "jaccard": 0.7142857142857143,
+      "baseline_top": [
+        "1ae4a4eb-a278-5db0-9477-52ff9e92b29d",
+        "8c572ced-f525-555a-9726-e0d480a16aab",
+        "0bf187b1-ba26-553b-b9b8-6786510741fa",
+        "8d2f382c-e684-50ef-8dc3-372ae7a1b0d9",
+        "1a4cf62e-9d50-51d1-826d-3ea285b94a41",
+        "d75b2a26-54d6-58ec-be51-7e15f85a8ef4"
+      ],
+      "candidate_top": [
+        "1ae4a4eb-a278-5db0-9477-52ff9e92b29d",
+        "8c572ced-f525-555a-9726-e0d480a16aab",
+        "1a4cf62e-9d50-51d1-826d-3ea285b94a41",
+        "0bf187b1-ba26-553b-b9b8-6786510741fa",
+        "8d2f382c-e684-50ef-8dc3-372ae7a1b0d9",
+        "abfb88e8-5699-5599-b88c-373206394cac"
+      ],
+      "baseline_max": 5.401215076446533,
+      "candidate_max": 5.284586429595947,
+      "oracle": {
+        "gold_baseline_deep": [
+          "1ae4a4eb-a278-5db0-9477-52ff9e92b29d",
+          "8c572ced-f525-555a-9726-e0d480a16aab",
+          "564da941-8f0f-5b62-a9e3-2ef8fe52768a",
+          "ef7acaa7-3291-5333-b1c9-f3713cbd1873",
+          "0591a77a-bc97-54b1-bc25-089832a05410",
+          "86d80280-f663-5c95-878a-6033bf702a6e"
+        ],
+        "gold_candidate_deep": [
+          "1ae4a4eb-a278-5db0-9477-52ff9e92b29d",
+          "8c572ced-f525-555a-9726-e0d480a16aab",
+          "0591a77a-bc97-54b1-bc25-089832a05410",
+          "564da941-8f0f-5b62-a9e3-2ef8fe52768a",
+          "ef7acaa7-3291-5333-b1c9-f3713cbd1873",
+          "ed2a61d3-8811-54e4-b29e-df59059d61be"
+        ],
+        "gold_baseline_in_prod": 2,
+        "gold_candidate_in_prod": 2,
+        "base_recall_goldA": 1.0,
+        "base_recall_goldB": 1.0,
+        "cand_recall_goldA": 1.0,
+        "cand_recall_goldB": 1.0
+      }
+    },
+    {
+      "query": "how to bake sourdough bread",
+      "control": true,
+      "pairs": 40,
+      "median_s": 2.048083824105561,
+      "ms_per_pair": 51.20209560263902,
+      "speedup_vs_baseline": 6.509442010954251,
+      "top3_identical": false,
+      "jaccard": 0.7142857142857143,
+      "baseline_top": [
+        "82bc5111-a6a9-5dc9-8a8d-ff5d8f3ea76e",
+        "398955e4-216c-500d-845c-75ff9e589f8d",
+        "51840a12-fba9-5877-bca1-14f0aa596850",
+        "fc35737b-78c3-59d0-9946-0455908826f6",
+        "45168b18-1386-571a-8d4b-b9c6c3f5b4b1",
+        "777a20f3-b94e-5ca2-ae9b-575d9db9f98d"
+      ],
+      "candidate_top": [
+        "51840a12-fba9-5877-bca1-14f0aa596850",
+        "fc35737b-78c3-59d0-9946-0455908826f6",
+        "45168b18-1386-571a-8d4b-b9c6c3f5b4b1",
+        "777a20f3-b94e-5ca2-ae9b-575d9db9f98d",
+        "d275def0-bd55-5a36-8fc0-32021b58a541",
+        "82bc5111-a6a9-5dc9-8a8d-ff5d8f3ea76e"
+      ],
+      "baseline_max": -5.5986809730529785,
+      "candidate_max": -6.024656772613525,
+      "oracle": {
+        "gold_baseline_deep": [
+          "82bc5111-a6a9-5dc9-8a8d-ff5d8f3ea76e",
+          "398955e4-216c-500d-845c-75ff9e589f8d",
+          "51840a12-fba9-5877-bca1-14f0aa596850",
+          "fc35737b-78c3-59d0-9946-0455908826f6",
+          "45168b18-1386-571a-8d4b-b9c6c3f5b4b1",
+          "777a20f3-b94e-5ca2-ae9b-575d9db9f98d"
+        ],
+        "gold_candidate_deep": [
+          "45168b18-1386-571a-8d4b-b9c6c3f5b4b1",
+          "777a20f3-b94e-5ca2-ae9b-575d9db9f98d",
+          "d275def0-bd55-5a36-8fc0-32021b58a541",
+          "82bc5111-a6a9-5dc9-8a8d-ff5d8f3ea76e",
+          "398955e4-216c-500d-845c-75ff9e589f8d",
+          "51840a12-fba9-5877-bca1-14f0aa596850"
+        ],
+        "gold_baseline_in_prod": 6,
+        "gold_candidate_in_prod": 6,
+        "base_recall_goldA": 1.0,
+        "base_recall_goldB": 0.8333333333333334,
+        "cand_recall_goldA": 0.8333333333333334,
+        "cand_recall_goldB": 0.8333333333333334
+      }
+    }
+  ]
+}
