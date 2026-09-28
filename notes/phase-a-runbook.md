@@ -8,7 +8,8 @@
 > Dockerfiles were test-built **rootless** on vhost2 with placeholder models and
 > smoke-tested (versions, zero CUDA packages, parse of a deck/DOCX/scanned PDF inside
 > the worker); both gate tools were tested against the live Qdrant with stub models.
-> **Not yet run: steps 0-8 below** — they need root podman (your sudo) and the real
+> **Not yet run: steps 0-8 below** (0b = the history check, added after asking whether
+> earlier worker rebuilds already drifted) — they need root podman (your sudo) and the real
 > models. Next after they pass: the operator-repo switch-over (end of this file), then
 > Gate 2 proper (`multi-user-rollout-plan.md` §5).
 
@@ -46,7 +47,17 @@ CFG=/data/docker/docs-bridge/config/config.yaml
 
 ---
 
-## Step 0 — preflight: what is deployed, and do its two embedders agree? (2 min)
+## Step 0 — stage the source, and look at what is deployed (3 min)
+
+From the repo root on the **workstation**, at the Phase A commit:
+
+```bash
+git rev-parse --short HEAD                            # note it in the results
+ssh vhost2 'mkdir -p ~/phase-a/out'
+rsync -a --delete --exclude .git ./ vhost2:phase-a/src/
+```
+
+Then on **vhost2**:
 
 ```bash
 sudo podman images --format '{{.Repository}}:{{.Tag}} {{.ID}} {{.Created}}' \
@@ -64,16 +75,80 @@ done 2>&1 | tee ~/phase-a/out/00-models.txt
 model), and `1.20.1 0.19.1 1.26.x` in both. **If the bge-m3 hashes differ, stop**:
 that is a pre-existing query/doc mismatch, and it decides which bytes to freeze.
 
-(Create the directories first: `mkdir -p ~/phase-a/out`.)
+## Step 0b — were all the stored vectors made by ONE model? (~12 min)
 
-## Step 1 — stage the source (workstation → vhost2, 1 min)
+Step 0 compares today's two images. It cannot see the past: `teamcenter` was embedded
+in several runs by worker images that were each **rebuilt**, and every rebuild
+re-exported the model:
 
-From the repo root on the workstation, at the Phase A commit:
+| Run | What it embedded | Chunks |
+|---|---|---|
+| Jun 24-25 | the first PDF guides | ~27.8k still stored |
+| Jun 27-28 | 13,707 SOA reference pages (+ a resume run; a worker rebuild landed mid-run) | ~81.5k |
+| Jun (AIG) | 211 AIG API pages | ~2.6k |
+| Aug 31 | 37 PDFs re-ingested (`~/reingest-*.txt`) | ~26.7k |
+
+If one of those rebuilds produced a slightly different model, part of the collection
+was measured with a different ruler — and step 4 would not notice, because it
+compares the old and new *runtime* against the same stored vectors. Two checks, the
+cheap definitive one first.
+
+**0b.1 — hash every worker image still on the host (2 min).** Rebuilds usually leave
+the previous image behind, untagged. If the June and August builds are still here,
+their model fingerprints answer the question directly.
 
 ```bash
-git rev-parse --short HEAD                            # note it in the results
-rsync -a --delete --exclude .git ./ vhost2:phase-a/src/
+for id in $(sudo podman images -a -q | sort -u); do
+  mnt=$(sudo podman image mount $id 2>/dev/null) || continue
+  f=$mnt/opt/bge-m3-onnx/model.int8.onnx
+  if sudo test -f $f; then
+    echo "$(sudo podman image inspect $id --format '{{.Created}}') $id" \
+         "$(sudo sha256sum $f | cut -c1-16)" \
+         "$(sudo podman image inspect $id --format '{{.RepoTags}}')"
+  fi
+  sudo podman image unmount $id >/dev/null 2>&1
+done | sort | tee ~/phase-a/out/00b-image-history.txt
 ```
+
+One line per image that carries an embedder, oldest first: creation time, image id,
+the first 16 hex of the model's sha256, and its tags (`[]` = an untagged old build).
+**Read it as:** every line with the same fingerprint → the rebuilds reproduced the
+model byte for byte, and 0b.2 only confirms it. Different fingerprints → note which
+dates they span; 0b.2 then shows whether the difference reaches the vectors. Only
+some builds still here → 0b.2 covers the rest.
+
+**0b.2 — measure it (~10 min, read-only).** Runs in the **current** worker (today's
+ruler). It splits `teamcenter` into the runs above, re-embeds 3 windows of 64
+neighbouring chunks per run — each chunk alone and inside its window, the way ingest
+batched — and compares each run's stored vectors against that run's own normal
+wobble (the INT8 batch effect: how far two measurements with the same model land).
+
+```bash
+cd ~/phase-a/src
+sudo podman run --rm -i --network docs-bridge-net \
+  -v $CFG:/config/config.yaml:ro,z -v ~/phase-a/out:/out:z \
+  -v ~/reingest-batch3.txt:/r/batch3.txt:ro,z -v ~/reingest-rest34.txt:/r/rest34.txt:ro,z \
+  --entrypoint python $OLD_WORKER - history --collection teamcenter \
+  --recent-docs /r/batch3.txt /r/rest34.txt --windows 3 \
+  --json /out/00b-history.json < tools/eval/embed_upgrade_parity.py \
+  2>&1 | tee ~/phase-a/out/00b-history.txt
+```
+
+**Expect `VERDICT: CONSISTENT`** — every group's stored vectors within 2x its own
+wobble, `outside` near 0% everywhere. The `reingested-aug31` row is the control:
+almost certainly embedded by today's worker (step 0's image date confirms), so it
+shows what "same ruler" looks like on real data; the June rows should look like it.
+
+## Step 1 — decide before freezing
+
+- **0 and 0b agree (same fingerprints and/or CONSISTENT)** → the collection was made
+  by one model, and it is the one in today's worker. Freeze it: step 2.
+- **0b.2 says SUSPECT for a group** → **stop.** That group was measured with a
+  different ruler than today's worker, and freezing today's bytes would lock the
+  mismatch in. Bring `00b-*` back first. The JSON names the affected documents; the
+  likely fix is re-embedding just that group with the frozen model (a targeted
+  re-ingest via `tools/ingest/reingest-docs.py`), not all of `teamcenter` — but which
+  bytes to freeze is decided from the evidence, not before it.
 
 ## Step 2 — freeze the models (1 min) — before anything else is built
 

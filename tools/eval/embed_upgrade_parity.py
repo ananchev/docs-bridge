@@ -7,6 +7,10 @@ tokenizers 0.23) against doc vectors made by the old one. This gate proves the t
 runtimes put text in the same place. The model bytes are frozen (images/models/), so
 only the runtime can differ — and this tool checks that too, rather than assume it.
 
+`history` (runbook step 0b, BEFORE the freeze) asks a prior question: were all the
+stored vectors made by one model in the first place? The collection was embedded
+over several runs by worker images that each re-exported the model. See history().
+
 Two steps. `dump` runs INSIDE an image (old, then new), against the live collection:
 
     sudo podman run --rm -i --network docs-bridge-net \\
@@ -257,6 +261,180 @@ def compare(args) -> int:
     return 0 if verdict == "PASS" else 1
 
 
+# --- history (inside the CURRENT worker image) ------------------------------------
+# Were all stored vectors made with the same model? The collection was embedded in
+# several runs (Jun 24-25, Jun 27-28, Aug 31, ...) by worker images that were each
+# rebuilt — and every rebuild re-exported the model. This re-embeds real chunks from
+# each run with TODAY's worker and asks whether each run's stored vectors sit within
+# the normal wobble of one ruler.
+#
+# The wobble: dynamic INT8 makes a vector depend on what shares its batch (Gate 1
+# test 4), so two measurements with the SAME model differ a little. Each chunk is
+# embedded twice — alone, and inside a window of up to 64 consecutive chunks in
+# (doc_id, chunk_index) order, which is how ingest composed its batches — and the gap
+# between the two is the wobble. A stored vector made by the same model should sit
+# about that far from today's re-embedding; one made by a different model sits
+# further, and a whole run of them shows up as a group that stands out.
+HISTORY_OUTSIDE_FACTOR = 2.0   # outside = beyond 2x its OWN group's wobble p99 ...
+HISTORY_OUTSIDE_FLOOR = 1e-5   # ... and never tighter than this cosine distance
+# Per group, not pooled: a group whose texts happen to be batch-sensitive would widen
+# a pooled limit for everyone, and a group made by another model does NOT wobble more
+# between today's two measurements — it just sits further from its stored vectors.
+HISTORY_MAX_OUTSIDE = 0.05     # a group is SUSPECT if >5% of its chunks are outside
+
+
+def _doc_counts(client, collection: str) -> dict[str, int]:
+    """doc_id -> chunk count, via the facet API (falls back to a payload scroll)."""
+    try:
+        res = client.facet(collection_name=collection, key="doc_id", limit=1_000_000,
+                           exact=True)
+        return {h.value: h.count for h in res.hits}
+    except Exception:  # noqa: BLE001 — older client/server without facet
+        counts: dict[str, int] = {}
+        offset = None
+        while True:
+            pts, offset = client.scroll(collection, limit=5000, offset=offset,
+                                        with_payload=["doc_id"], with_vectors=False)
+            for p in pts:
+                d = (p.payload or {}).get("doc_id")
+                counts[d] = counts.get(d, 0) + 1
+            if offset is None:
+                return counts
+
+
+def _group_of(doc_id: str, recent: set[str]) -> str:
+    if doc_id in recent:
+        return "reingested-aug31"
+    if doc_id.lower().endswith(".pdf"):
+        return "pdf-june"
+    if "/SOA Reference/" in doc_id:
+        return "soa-june"
+    return "other-md"
+
+
+def _doc_chunks(client, collection: str, doc_id: str) -> list:
+    from qdrant_client import models
+
+    flt = models.Filter(must=[models.FieldCondition(
+        key="doc_id", match=models.MatchValue(value=doc_id))])
+    out, offset = [], None
+    while True:
+        pts, offset = client.scroll(collection, scroll_filter=flt, limit=512,
+                                    offset=offset, with_payload=True, with_vectors=True)
+        out += pts
+        if offset is None:
+            break
+    return sorted(out, key=lambda p: (p.payload or {}).get("chunk_index", 0))
+
+
+def _pctl(xs: list[float], q: float) -> float:
+    s = sorted(xs)
+    return s[min(len(s) - 1, int(round(q * (len(s) - 1))))] if s else float("nan")
+
+
+def history(args) -> int:
+    import random
+
+    from qdrant_client import QdrantClient
+
+    from docs_bridge import config
+    from docs_bridge.embed_onnx import OnnxEmbedder
+
+    cfg = config.load(args.config)
+    client = QdrantClient(host=cfg.qdrant.host, port=cfg.qdrant.port, timeout=300)
+    recent: set[str] = set()
+    for f in args.recent_docs or []:
+        recent |= {ln.strip() for ln in open(f) if ln.strip()}
+    counts = _doc_counts(client, args.collection)
+    missing = sorted(recent - set(counts))
+    if missing:
+        print(f"[history] note: {len(missing)} listed doc(s) not in the collection, "
+              f"e.g. {missing[0]!r}", file=sys.stderr)
+    groups: dict[str, list[str]] = {}
+    for d in sorted(counts):
+        groups.setdefault(_group_of(d, recent), []).append(d)
+    print("[history] groups: " + ", ".join(f"{g} {len(v)} docs / "
+          f"{sum(counts[d] for d in v)} chunks" for g, v in groups.items()),
+          file=sys.stderr)
+
+    emb = OnnxEmbedder(cfg.onnx_model_dir, use_int8=cfg.embedding_int8)
+    model_sha = _sha256(os.path.join(cfg.onnx_model_dir, "model.int8.onnx"))
+    rng = random.Random(args.seed)
+    rows = []
+    for g, docs in groups.items():
+        for w in range(args.windows):
+            # a window = up to --batch consecutive chunks in (doc_id, chunk_index)
+            # order starting at a random chunk of a random doc of this group
+            start = rng.randrange(len(docs))
+            window = []
+            for d in docs[start:]:
+                pts = _doc_chunks(client, args.collection, d)
+                if not window:
+                    pts = pts[rng.randrange(len(pts)):]
+                window += [p for p in pts if (p.payload or {}).get("text", "").strip()]
+                if len(window) >= args.batch:
+                    break
+            window = window[: args.batch]
+            texts = [p.payload["text"] for p in window]
+            batched, _ = emb.encode(texts)
+            for p, b in zip(window, batched):
+                alone, _ = emb.encode([p.payload["text"]])
+                stored = (p.vector or {}).get("dense")
+                rows.append({
+                    "group": g, "doc_id": p.payload.get("doc_id"),
+                    "chunk_index": p.payload.get("chunk_index"),
+                    "wobble": 1 - _cos(alone[0], b),
+                    "d_alone": 1 - _cos(alone[0], stored),
+                    "d_batched": 1 - _cos(b, stored),
+                })
+            print(f"[history] {g}: window {w + 1}/{args.windows}, {len(window)} chunks "
+                  f"from {len({p.payload.get('doc_id') for p in window})} doc(s)",
+                  file=sys.stderr)
+
+    wob = [r["wobble"] for r in rows]
+    print(f"\nembed history | {args.collection} | today's worker model "
+          f"{model_sha[:16]} | {len(rows)} chunks re-embedded")
+    print(f"  normal wobble (same model, alone vs batch of {args.batch}), all groups: "
+          f"cosine distance median {_pctl(wob, .5):.2e}  p99 {_pctl(wob, .99):.2e}")
+    print(f"  a stored vector is OUTSIDE when it sits further from BOTH of today's "
+          f"measurements of it than {HISTORY_OUTSIDE_FACTOR:g}x its group's wobble p99\n")
+    print(f"  {'group':<18}{'chunks':>7}{'wobble med':>12}{'limit':>10}{'stored med':>12}"
+          f"{'stored p95':>12}{'stored max':>12}{'outside':>9}")
+    fails, report = [], {}
+    for g in groups:
+        rs = [r for r in rows if r["group"] == g]
+        if not rs:
+            continue
+        gw = [r["wobble"] for r in rs]
+        limit = max(HISTORY_OUTSIDE_FACTOR * _pctl(gw, 0.99), HISTORY_OUTSIDE_FLOOR)
+        best = [min(r["d_alone"], r["d_batched"]) for r in rs]
+        out = [r for r, b in zip(rs, best) if b > limit]
+        frac = len(out) / len(rs)
+        print(f"  {g:<18}{len(rs):>7}{_pctl(gw, .5):>12.2e}{limit:>10.2e}"
+              f"{_pctl(best, .5):>12.2e}{_pctl(best, .95):>12.2e}{max(best):>12.2e}"
+              f"{frac:>8.0%}")
+        report[g] = {"chunks": len(rs), "wobble_p99": _pctl(gw, .99), "limit": limit,
+                     "stored_median": _pctl(best, .5),
+                     "stored_p95": _pctl(best, .95), "stored_max": max(best),
+                     "outside": frac,
+                     "outside_docs": sorted({r["doc_id"] for r in out})}
+        if frac > HISTORY_MAX_OUTSIDE:
+            fails.append(f"{g}: {frac:.0%} of its stored vectors sit outside the wobble — "
+                         f"embedded by a different model than today's worker; docs e.g. "
+                         f"{report[g]['outside_docs'][:3]}")
+    verdict = "CONSISTENT" if not fails else "SUSPECT"
+    print(f"\nVERDICT: {verdict}")
+    for f in fails:
+        print(f"  - {f}")
+    if args.json_out:
+        json.dump({"verdict": verdict, "failures": fails, "model_sha256": model_sha,
+                   "wobble": {"median": _pctl(wob, .5), "p99": _pctl(wob, .99)},
+                   "groups": report, "rows": rows},
+                  open(args.json_out, "w"), indent=2)
+        print(f"\nwrote {args.json_out}")
+    return 0 if verdict == "CONSISTENT" else 1
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -268,12 +446,21 @@ def main() -> int:
     d.add_argument("--ids-from", help="a previous dump: embed exactly its chunks")
     d.add_argument("--queries", help="questions YAML (notes/gate2/questions-*.yaml)")
     d.add_argument("--out", required=True)
+    h = sub.add_parser("history", help="were all stored vectors made by one model?")
+    h.add_argument("--config", default="/config/config.yaml")
+    h.add_argument("--collection", default="teamcenter")
+    h.add_argument("--recent-docs", nargs="*", help="doc-id lists of a later re-ingest "
+                   "(one per line) — their group is the 'known recent' reference")
+    h.add_argument("--windows", type=int, default=2, help="windows per group")
+    h.add_argument("--batch", type=int, default=64, help="window size = ingest batch")
+    h.add_argument("--seed", type=int, default=7)
+    h.add_argument("--json", dest="json_out")
     c = sub.add_parser("compare", help="old dump vs new dump")
     c.add_argument("--old", required=True)
     c.add_argument("--new", required=True)
     c.add_argument("--json", dest="json_out")
     args = ap.parse_args()
-    return dump(args) if args.cmd == "dump" else compare(args)
+    return {"dump": dump, "history": history, "compare": compare}[args.cmd](args)
 
 
 if __name__ == "__main__":
