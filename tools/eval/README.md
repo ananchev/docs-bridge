@@ -20,7 +20,7 @@ full flag/env list.
 | `bench_search.py` | Measure `/v1/search` latency broken down by stage (retrieve vs rerank), to see what the rerank costs before tuning `top_n`. |
 | `dump_rerank_fixture.py` | **Gate 1 §2.2** — dump the rerank fixture: the validated queries, their real RRF candidates, and the current CPU-INT8 scores. The one artifact every hardware/model comparison consumes (it needs no Qdrant, so it travels to a bare GPU box). |
 | `thread_scaling.py` | **Gate 1 §2.1** — seconds-per-query vs `OnnxReranker(threads=N)`, yielding **C**, the cores one search usefully consumes. C sets semaphore permits and therefore the whole fleet shape. |
-| `rerank_ab.py` | **Gate 1 §2.3 / §3, Gate 2 §5.2** — A/B any reranker (ONNX int8/fp32, or torch fp16/bf16 on CUDA) against the fixture's baseline, on the top-3 + Jaccard bar, with disagreements adjudicated by a deeper-pool oracle. Standalone: no Qdrant, no config, no `docs_bridge` install. |
+| `rerank_ab.py` | **Gate 1 §2.3 / §3, Gate 2 §5.2** — A/B any reranker (ONNX int8/fp32, or torch fp16/bf16 on CUDA) on the top-3 + Jaccard bar against a **reference**: a saved fp32 run via `--reference` (plan §2.4, since 2026-09-28), else the fixture's legacy CPU-INT8 column. Disagreements are adjudicated by the reference as a *fixed* judge over the deeper pool (needs a `--score-pool` reference run). `--backend replay --replay <run.json>` re-judges any saved run offline. Standalone: no Qdrant, no config, no `docs_bridge` install. |
 
 ## Sample invocation
 

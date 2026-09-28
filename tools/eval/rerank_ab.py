@@ -27,12 +27,26 @@ Prove faithfulness before trusting any comparison:
 which must reproduce the fixture's baseline column to float noise.
 
 THE BAR (plan §2.4): top-3 ordered-identical and top-6 Jaccard >= 0.83 against
-the baseline. A DIFFERENCE is not automatically a regression — fp16 is strictly
-more precise than INT8 — so every disagreement is adjudicated with the
-reranker-as-oracle method from validate_union.py: the deeper `oracle_pool` defines
-the global-best top-k under EACH scorer, and we ask which ranking contains more of
-it. That is the difference between "the new model changed the answer" and "the new
-model got it wrong".
+the REFERENCE. Since 2026-09-28 the reference is the unquantized model — a saved
+fp32 run passed as `--reference notes/gate1/gpu-fp32.json` — not the fixture's
+CPU-INT8 column: INT8 sits up to 1.03 logits from fp32, so fp32 itself fails an INT8
+bar and no more precise scorer could ever pass it. Without `--reference` the INT8
+column is still used (legacy, and what the ONNX `--selftest` must reproduce).
+
+A disagreement is adjudicated by the reference acting as a FIXED judge over the
+deeper `oracle_pool`: the judge's global-best top-k there, restricted to chunks in
+the reranked set, must all be kept by the candidate. Differences confined to chunks
+the judge would not rank globally best are accepted. The judge must never be the
+candidate itself — grading each scorer against its own deep top-k (the method before
+2026-09-28) lets each recall its own gold at 1.00 and turns every set change into a
+"regression". The judge needs the reference's pool scores, which a run stores only
+when made with `--score-pool`; a reference without them cannot adjudicate, so any
+disagreement then fails.
+
+Any saved run can be re-judged offline, with no model and no GPU:
+
+    python tools/eval/rerank_ab.py --fixture fixture.json --backend replay \\
+        --replay notes/gate1/gpu-fp16.json --reference notes/gate1/gpu-fp32.json
 """
 
 from __future__ import annotations
@@ -151,6 +165,47 @@ class TorchScorer:
             return logits.reshape(-1).float().cpu().tolist()
 
 
+class ReplayScorer:
+    """Replays the per-pair scores of a saved --json run, so a run can be re-judged
+    against a different reference without its model or its hardware. Its timings are
+    the saved ones — replaying measures nothing."""
+
+    kind = "replay"
+
+    def __init__(self, path: str, fx: dict) -> None:
+        run = load_run(path, fx)
+        self.desc = f"replay of {path}: {run['candidate']}"
+        self.saved = {}
+        self.timings = {}
+        for r in run["queries"]:
+            self.saved[(r["query"], len(r["scores"]))] = r["scores"]
+            if r.get("pool_scores"):
+                self.saved[(r["query"], len(r["pool_scores"]))] = r["pool_scores"]
+            self.timings[r["query"]] = r["median_s"]
+
+    def score(self, query: str, passages: list[str]) -> list[float]:
+        try:
+            return self.saved[(query, len(passages))]
+        except KeyError:
+            raise SystemExit(f"replayed run has no scores for {len(passages)} passages of "
+                             f"{query[:50]!r} (pool scores need a --score-pool run)")
+
+
+def load_run(path: str, fx: dict) -> dict:
+    """A saved --json run, checked to line up with this fixture pair for pair."""
+    run = json.load(open(path))
+    if run.get("fixture_meta") != fx["meta"]:
+        raise SystemExit(f"{path} was made on a different fixture — its scores do not "
+                         f"line up with this one")
+    rq = run.get("queries") or []
+    if len(rq) != len(fx["queries"]) or any(
+            r["query"] != q["query"] or len(r.get("scores") or []) != len(q["candidates"])
+            for r, q in zip(rq, fx["queries"])):
+        raise SystemExit(f"{path} has no per-pair scores for this fixture (runs before "
+                         f"2026-09-28 dropped them) — re-run it with this version")
+    return run
+
+
 class Bucketed:
     """Wraps a scorer to length-sort and score in sub-batches of `bucket`, restoring
     the caller's order. Padding is mathematically inert, so for a float model this
@@ -192,10 +247,15 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--fixture", default=os.environ.get("AB_FIXTURE", "fixture.json"))
-    ap.add_argument("--backend", choices=["onnx", "torch"], default="onnx")
+    ap.add_argument("--backend", choices=["onnx", "torch", "replay"], default="onnx")
     ap.add_argument("--model-dir", help="onnx backend: the exported model dir")
     ap.add_argument("--model-id", default="BAAI/bge-reranker-v2-m3",
                     help="torch backend: HF model id")
+    ap.add_argument("--replay", help="replay backend: a saved --json run to re-judge")
+    ap.add_argument("--reference",
+                    help="a saved --json run to judge against (plan §2.4: the fp32 run, "
+                         "notes/gate1/gpu-fp32.json). Default: the fixture's CPU-INT8 "
+                         "column (legacy)")
     ap.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
     ap.add_argument("--precision", choices=["int8", "fp32", "fp16", "bf16"],
                     default="int8")
@@ -208,10 +268,12 @@ def main() -> int:
                          "this size (0 = one batch, today's behaviour). Cuts padding "
                          "waste; under INT8 it can also move scores, so it is judged "
                          "on the same bar as a new model.")
-    ap.add_argument("--no-oracle", action="store_true",
-                    help="skip scoring the deep pool (faster; no adjudication)")
+    ap.add_argument("--score-pool", action="store_true",
+                    help="also score the deep oracle pool and store it in --json, so "
+                         "this run can serve as a --reference judge (the reference "
+                         "run needs it; candidates do not)")
     ap.add_argument("--selftest", action="store_true",
-                    help="assert this scorer reproduces the fixture baseline column")
+                    help="assert this scorer reproduces the reference's scores")
     ap.add_argument("--json", dest="json_out", help="write the full result as JSON")
     args = ap.parse_args()
 
@@ -225,74 +287,92 @@ def main() -> int:
         scorer = OnnxScorer(model_dir, int8=(args.precision == "int8"),
                             max_length=max_length,
                             threads=args.threads or None, device=args.device)
-    else:
+    elif args.backend == "torch":
         scorer = TorchScorer(args.model_id, args.device, args.precision,
                              max_length, args.threads or None)
+    else:
+        if not args.replay:
+            raise SystemExit("--backend replay needs --replay <run.json>")
+        if args.bucket:
+            raise SystemExit("--bucket re-batches live scoring; a replay has none")
+        scorer = ReplayScorer(args.replay, fx)
 
     if args.bucket:
         scorer = Bucketed(scorer, args.bucket)
 
+    # the reference: its production scores set the bar, its pool scores make the judge
+    if args.reference:
+        ref = load_run(args.reference, fx)
+        ref_label = f"{args.reference}: {ref['candidate']}"
+        ref_scores = [r["scores"] for r in ref["queries"]]
+        ref_pool = [r.get("pool_scores") for r in ref["queries"]]
+    else:
+        ref_label = (f"fixture baseline column: {meta['baseline']['kind']} "
+                     f"({meta['baseline']['model_meta'].get('model_id', '?')}) — legacy; "
+                     f"plan §2.4 now judges against fp32 (--reference)")
+        ref_scores = [[c["baseline_score"] for c in q["candidates"]] for q in fx["queries"]]
+        ref_pool = [[c["baseline_score"] for c in q.get("oracle_pool") or []] or None
+                    for q in fx["queries"]]
+
     print(f"\nrerank A/B | fixture={args.fixture}")
-    print(f"  baseline:  {meta['baseline']['kind']} "
-          f"({meta['baseline']['model_meta'].get('model_id', '?')}) on "
-          f"{meta['host']} [{meta['machine']}, {meta['cpu_count']} cores], "
+    print(f"  CPU baseline (timing): {meta['baseline']['kind']} on {meta['host']} "
+          f"[{meta['machine']}, {meta['cpu_count']} cores], "
           f"{meta['timing']['rerank_ms_per_pair']:.0f} ms/pair")
-    print(f"  candidate: {scorer.desc}")
+    print(f"  reference + judge:     {ref_label}")
+    print(f"  candidate:             {scorer.desc}")
     print(f"  top_n={meta['top_n']} k={k} max_length={max_length} "
           f"oracle_pool={meta['oracle_pool']} queries={len(fx['queries'])}")
     print(f"  bar: top-{min(3, k)} ordered-identical AND top-{k} Jaccard >= "
-          f"{args.jaccard_min}\n")
+          f"{args.jaccard_min} vs the reference\n")
 
     # warm-up on the first query's batch: model load, kernel autotune, thread pool
-    warm = fx["queries"][0]["candidates"][:8]
-    t0 = time.perf_counter()
-    scorer.score(fx["queries"][0]["query"], [c["text"] for c in warm])
-    print(f"  warm-up (8 pairs, includes any lazy init): "
-          f"{time.perf_counter() - t0:.2f} s\n")
+    if scorer.kind != "replay":
+        warm = fx["queries"][0]["candidates"][:8]
+        t0 = time.perf_counter()
+        scorer.score(fx["queries"][0]["query"], [c["text"] for c in warm])
+        print(f"  warm-up (8 pairs, includes any lazy init): "
+              f"{time.perf_counter() - t0:.2f} s\n")
 
     hdr = (f"{'query':<42}{'s':>7}{'ms/pr':>7}{'spdup':>7}{'top3':>6}"
-           f"{'jacc':>6}{'goldA':>7}{'goldB':>7}{'maxS':>8}")
+           f"{'jacc':>6}{'judge':>7}{'maxS':>8}")
     print(hdr)
     print("-" * len(hdr))
 
     results, fails, flags = [], [], []
-    for q in fx["queries"]:
+    for qi, q in enumerate(fx["queries"]):
         cands = q["candidates"]
         texts = [c["text"] for c in cands]
-        base = [c["baseline_score"] for c in cands]
+        ref_q = ref_scores[qi]
 
-        samples = []
-        for _ in range(max(1, args.repeats)):
-            t0 = time.perf_counter()
+        if scorer.kind == "replay":
             new = scorer.score(q["query"], texts)
-            samples.append(time.perf_counter() - t0)
-        med = statistics.median(samples)
+            med = scorer.timings[q["query"]]      # the replayed run's own timing
+        else:
+            samples = []
+            for _ in range(max(1, args.repeats)):
+                t0 = time.perf_counter()
+                new = scorer.score(q["query"], texts)
+                samples.append(time.perf_counter() - t0)
+            med = statistics.median(samples)
 
-        base_top = rank_ids(cands, base, k)
+        ref_top = rank_ids(cands, ref_q, k)
         new_top = rank_ids(cands, new, k)
-        top3 = base_top[:3] == new_top[:3]
-        jac = jaccard(base_top, new_top)
+        top3 = ref_top[:3] == new_top[:3]
+        jac = jaccard(ref_top, new_top)
 
-        # oracle: the deep pool defines the global-best top-k under EACH scorer
-        gold_a_recall = gold_b_recall = None
-        oracle = {}
+        # the judge: the REFERENCE's global-best top-k over the deep pool, restricted
+        # to chunks the reranked set can hold. Fixed across candidates — never the
+        # candidate's own view, which would grade it against itself.
         pool = q.get("oracle_pool") or []
-        if pool and not args.no_oracle:
-            pool_new = scorer.score(q["query"], [c["text"] for c in pool])
-            pool_base = [c["baseline_score"] for c in pool]
-            gold_a = rank_ids(pool, pool_base, k)          # baseline's deep view
-            gold_b = rank_ids(pool, pool_new, k)           # candidate's deep view
+        oracle = {}
+        if pool and ref_pool[qi]:
+            gold = rank_ids(pool, ref_pool[qi], k)
             prod_ids = {c["id"] for c in cands}
-            ga = [i for i in gold_a if i in prod_ids]
-            gb = [i for i in gold_b if i in prod_ids]
-            gold_a_recall = (len(set(ga) & set(new_top)) / len(ga)) if ga else None
-            gold_b_recall = (len(set(gb) & set(new_top)) / len(gb)) if gb else None
+            gold_in = [g for g in gold if g in prod_ids]
             oracle = {
-                "gold_baseline_deep": gold_a, "gold_candidate_deep": gold_b,
-                "gold_baseline_in_prod": len(ga), "gold_candidate_in_prod": len(gb),
-                "base_recall_goldA": (len(set(ga) & set(base_top)) / len(ga)) if ga else None,
-                "base_recall_goldB": (len(set(gb) & set(base_top)) / len(gb)) if gb else None,
-                "cand_recall_goldA": gold_a_recall, "cand_recall_goldB": gold_b_recall,
+                "judge_gold": gold, "judge_gold_in_prod": gold_in,
+                "candidate_keeps": [g for g in gold_in if g in new_top],
+                "reference_keeps": [g for g in gold_in if g in ref_top],
             }
 
         row = {
@@ -300,32 +380,34 @@ def main() -> int:
             "median_s": med, "ms_per_pair": med / len(cands) * 1000.0,
             "speedup_vs_baseline": q["rerank_s"] / med if med else None,
             "top3_identical": top3, "jaccard": jac,
-            "baseline_top": base_top, "candidate_top": new_top,
-            "baseline_max": max(base), "candidate_max": max(new),
+            "reference_top": ref_top, "candidate_top": new_top,
+            "reference_max": max(ref_q), "candidate_max": max(new),
             "scores": new, "oracle": oracle,
         }
+        if args.score_pool and pool:
+            row["pool_scores"] = scorer.score(q["query"], [c["text"] for c in pool])
         results.append(row)
 
+        judge = (f"{len(oracle['candidate_keeps'])}/{len(oracle['judge_gold_in_prod'])}"
+                 if oracle else "n/a")
         print(f"{q['query'][:41]:<42}{med:>7.2f}{row['ms_per_pair']:>7.1f}"
               f"{(row['speedup_vs_baseline'] or 0):>6.1f}x"
-              f"{('yes' if top3 else 'NO'):>6}{jac:>6.2f}"
-              f"{('  n/a' if gold_a_recall is None else f'{gold_a_recall:>7.2f}')}"
-              f"{('  n/a' if gold_b_recall is None else f'{gold_b_recall:>7.2f}')}"
+              f"{('yes' if top3 else 'NO'):>6}{jac:>6.2f}{judge:>7}"
               f"{row['candidate_max']:>8.2f}")
 
         if q["control"]:
             # The known-negative must stay negative, or the score sign no longer
             # separates real answers from abstention noise on this hardware/model.
-            # Only a sign the BASELINE got right and this scorer lost is a failure;
-            # a baseline that was already positive is a fact about the fixture (the
+            # Only a sign the REFERENCE got right and this scorer lost is a failure;
+            # a reference that was already positive is a fact about the fixture (the
             # corpus really does hold something bread-adjacent), so it is a warning.
-            if row["candidate_max"] >= 0 > row["baseline_max"]:
+            if row["candidate_max"] >= 0 > row["reference_max"]:
                 fails.append(f"control query scored POSITIVE ({row['candidate_max']:+.2f}) "
-                             f"where the baseline was {row['baseline_max']:+.2f} — this "
+                             f"where the reference was {row['reference_max']:+.2f} — this "
                              f"scorer no longer separates answers from abstention")
             elif row["candidate_max"] >= 0:
-                print(f"  note: control is positive for BOTH baseline "
-                      f"({row['baseline_max']:+.2f}) and candidate "
+                print(f"  note: control is positive for BOTH reference "
+                      f"({row['reference_max']:+.2f}) and candidate "
                       f"({row['candidate_max']:+.2f}) — inspect the fixture, not the scorer")
             continue
         if not top3 or jac < args.jaccard_min:
@@ -336,51 +418,51 @@ def main() -> int:
     med_speedup = statistics.median([r["speedup_vs_baseline"] for r in real
                                      if r["speedup_vs_baseline"]])
     med_ms = statistics.median([r["ms_per_pair"] for r in real])
-    print(f"\nspeed: {med_ms:.1f} ms/pair median ({med_speedup:.1f}x the baseline's "
-          f"{meta['timing']['rerank_ms_per_pair']:.0f} ms/pair)")
+    print(f"\nspeed: {med_ms:.1f} ms/pair median ({med_speedup:.1f}x the CPU baseline's "
+          f"{meta['timing']['rerank_ms_per_pair']:.0f} ms/pair)"
+          f"{' — replayed, not measured' if scorer.kind == 'replay' else ''}")
     print(f"       => {med_ms * meta['top_n'] / 1000:.2f} s per search at "
           f"top_n={meta['top_n']}, "
           f"{med_ms * 60 / 1000:.2f} s at multi_top_n=60")
 
     if args.selftest:
         worst = 0.0
-        for r, q in zip(results, fx["queries"]):
-            for got, want in zip(r["scores"], [c["baseline_score"] for c in q["candidates"]]):
-                worst = max(worst, abs(got - want))
+        for r, want in zip(results, ref_scores):
+            for got, w in zip(r["scores"], want):
+                worst = max(worst, abs(got - w))
         ok = worst < 1e-3
-        print(f"\nSELFTEST: max |candidate - baseline| = {worst:.2e} "
+        print(f"\nSELFTEST: max |candidate - reference| = {worst:.2e} "
               f"=> {'FAITHFUL' if ok else 'MISMATCH'}")
         if not ok:
             fails.append(f"selftest mismatch {worst:.2e} — this scorer does not "
-                         f"reproduce the baseline; no comparison below is trustworthy")
+                         f"reproduce the reference; no comparison below is trustworthy")
 
     print("")
     if flags:
-        print(f"DIFFERS from baseline on {len(flags)}/{len(real)} queries — "
-              f"adjudicating with the deep-pool oracle:")
+        print(f"DIFFERS from the reference on {len(flags)}/{len(real)} queries — "
+              f"adjudicating with the reference as a fixed judge over the deep pool:")
         for r in flags:
             o = r["oracle"]
             print(f"\n  {r['query'][:70]}")
             print(f"    top-3 identical: {r['top3_identical']}  jaccard: {r['jaccard']:.2f}")
             if not o:
-                print("    no oracle pool in fixture — cannot adjudicate")
+                print("    no judge: the reference has no pool scores (make it with "
+                      "--score-pool) — cannot adjudicate")
+                fails.append(f"unadjudicated difference on: {r['query'][:60]}")
                 continue
-            def pc(v):
-                return "n/a" if v is None else f"{v:.2f}"
-
-            print(f"    gold (baseline's deep top-{k}, {o['gold_baseline_in_prod']} of "
-                  f"which are in the reranked {r['pairs']}): candidate recalls "
-                  f"{pc(o['cand_recall_goldA'])} vs baseline {pc(o['base_recall_goldA'])}")
-            print(f"    gold (candidate's deep top-{k}, {o['gold_candidate_in_prod']} in "
-                  f"the reranked set): candidate recalls "
-                  f"{pc(o['cand_recall_goldB'])} vs baseline {pc(o['base_recall_goldB'])}")
-            better = ((o["cand_recall_goldA"] or 0) >= (o["base_recall_goldA"] or 0)
-                      and (o["cand_recall_goldB"] or 0) >= (o["base_recall_goldB"] or 0))
-            print(f"    -> {'IMPROVEMENT or tie (accept)' if better else 'REGRESSION (reject)'}")
-            if not better:
-                fails.append(f"oracle-confirmed regression on: {r['query'][:60]}")
+            n = len(o["judge_gold_in_prod"])
+            print(f"    judge's global-best top-{k}: {n} of them in the reranked "
+                  f"{r['pairs']}; candidate keeps {len(o['candidate_keeps'])}/{n}, "
+                  f"reference keeps {len(o['reference_keeps'])}/{n}")
+            lost = [g for g in o["judge_gold_in_prod"] if g not in o["candidate_keeps"]]
+            if lost:
+                print(f"    -> REGRESSION (reject): drops the judge's global-best {lost}")
+                fails.append(f"judge-confirmed regression on: {r['query'][:60]}")
+            else:
+                print("    -> ACCEPT: differs only on chunks the judge does not rank "
+                      "globally best")
     else:
-        print(f"MATCHES baseline on all {len(real)} real queries "
+        print(f"MATCHES the reference on all {len(real)} real queries "
               f"(top-3 identical, top-{k} Jaccard >= {args.jaccard_min}).")
 
     verdict = "PASS" if not fails else "FAIL"
@@ -393,13 +475,12 @@ def main() -> int:
             "candidate": scorer.desc, "backend": args.backend,
             "device": args.device, "precision": args.precision,
             "model_dir": getattr(args, "model_dir", None), "model_id": args.model_id,
-            "bucket": args.bucket,
+            "bucket": args.bucket, "reference": ref_label,
             "host": platform.node(), "machine": platform.machine(),
             "fixture_meta": meta, "verdict": verdict, "failures": fails,
             "median_ms_per_pair": med_ms, "median_speedup": med_speedup,
-            # per-pair scores kept (8 x 40 floats) so two CANDIDATE runs can be
-            # diffed against each other, not only against the baseline column —
-            # e.g. fp16 bucketed vs fp16 unbucketed isolates what bucketing moved
+            # per-pair scores kept (8 x 40 floats; + the pool with --score-pool) so a
+            # run can be replayed, diffed against another, or serve as the reference
             "queries": results,
         }, open(args.json_out, "w"), indent=2)
         print(f"\nwrote {args.json_out}")

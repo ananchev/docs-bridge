@@ -309,7 +309,9 @@ fixture plus the live collection:
 3. GPU fp16, new toolchain (GPU path only)
 
 Bar: top-3 ordered-identical and top-6 Jaccard ≥ 0.83 against the **fp32 reference**
-(`notes/gate1/gpu-fp32.json`, decided 2026-09-28 — §2.4 status), with disagreements
+(`notes/gate1/ref-fp32.json` once `gate1-runbook.md` step 5.5 has run; until then
+`gpu-fp32.json`, which sets the bar but cannot adjudicate — decided 2026-09-28, §2.4
+status; `rerank_ab.py --reference`), with disagreements
 adjudicated by a **fixed fp32 judge** over the deeper pool, not by each scorer's own
 deep top-6 (circular when the judge changes). Rows 1-2 (CPU INT8) are therefore
 measured *against* fp32 too; today INT8 sits up to 1.03 logits from it, which is the

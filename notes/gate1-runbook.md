@@ -202,6 +202,32 @@ scp 'bnl-docsbridge-dev-host:gate1/out/*' notes/gate1/
 Expect nine files: `gpu-env.txt` plus a `.json` and `.txt` per run. Then the instance
 holds nothing of value and can be terminated or recycled.
 
+### 5.5 — the fp32 reference run (once, next time a GPU host exists)
+
+Since the 2026-09-28 decision, fp32 is the A/B reference **and** the judge that
+adjudicates disagreements, and the judge needs fp32's scores over the 80-chunk deep
+pool. `gpu-fp32.json` predates `--score-pool`, so it can set the bar but cannot
+adjudicate — which is why fp16 + bucket 4 currently shows an *unadjudicated*
+difference (a byte-identical duplicate swap on the email query). One fp32 run with
+`--score-pool` fixes that; `--selftest` against the old run proves it is the same
+reference, not a new one:
+
+```bash
+$PY rerank_ab.py --fixture fixture.json --backend torch \
+    --model-id BAAI/bge-reranker-v2-m3 --device cuda --precision fp32 \
+    --repeats 3 --score-pool --reference gpu-fp32.json --selftest \
+    --json out/ref-fp32.json 2>&1 | tee out/ref-fp32.txt
+```
+
+(stage `notes/gate1/gpu-fp32.json` next to `rerank_ab.py` first). Expect
+`SELFTEST … FAITHFUL`; then `notes/gate1/ref-fp32.json` is the canonical reference.
+Every later A/B — including re-judging any saved run offline — is then:
+
+```bash
+python tools/eval/rerank_ab.py --fixture fixture.json --backend replay \
+    --replay notes/gate1/<run>.json --reference notes/gate1/ref-fp32.json
+```
+
 ---
 
 # Results
@@ -460,10 +486,13 @@ the hardware decision).
   TC_transfer_area, control margin −3.86 vs −5.60) — but that is now a judgement, not
   a confirmed regression. INT8 bucketing is moot on the GPU path; on the CPU path it
   should be re-judged against fp32 alongside static quantization (Gate 2).
-- **The A/B harness needs an fp32 reference.** `rerank_ab.py` should accept a
-  previous run's JSON (e.g. `gpu-fp32.json`) as the reference instead of the
-  fixture's INT8 column, and the oracle should adjudicate with a *fixed third judge*
-  (fp32) rather than each scorer's own view. Plan §5.2's bar needs the same change.
+- **The A/B harness now takes an fp32 reference (done 2026-09-28).**
+  `rerank_ab.py --reference <run.json>` judges against a saved run instead of the
+  fixture's INT8 column, adjudicates with that reference as a *fixed* judge over the
+  deep pool (the circular own-view oracle is gone), and `--backend replay` re-judges
+  any saved run offline. Re-judged against `gpu-fp32.json`: fp16 **PASS**, fp16 +
+  bucket 8 **PASS**, fp16 + bucket 4 one unadjudicated duplicate swap — pending the
+  §5.5 reference run with pool scores.
 - **Chunking (Gate 2 input):** a 16-character heading fragment (`'Site preference.'`)
   scores +3.55 and can take a top-6 slot. That is a chunker problem, not a reranker
   one.
