@@ -1,0 +1,441 @@
+# Labelled question set — the Mac mini's `teamcenter` corpus (Gate 2, plan §1.1/§5.2).
+#
+# Used by tools/eval/retrieval_ab.py (old vs new image on the same collection) and
+# embedded by tools/eval/embed_upgrade_parity.py (queries take part in the embed
+# parity gate). Drafted 2026-09-28 from real chunks of the live collection; every
+# label needs a human check before results from it are trusted.
+#
+# SCHEMA
+#   id        stable id; never reuse one
+#   question  as a user would type it
+#   kind      fact | procedure | identifier | control
+#   expect    the chunks that ANSWER it. A retrieved chunk is a hit when it matches
+#             ANY entry: doc_id equal to `doc`, AND `section` a substring of its
+#             section_path (if given), AND `contains` a substring of its text (if
+#             given; case-insensitive). Labels are content, not chunk ids, so they
+#             survive re-chunking.
+#             Empty for `control`: those must ABSTAIN (best rerank score < 0).
+#   evidence  a short quote of the answering text, for whoever verifies the label
+#   status    draft -> verified (a human read the chunk and agrees) | drop
+#   source    sampled (drafted from a random chunk) | gate1-fixture (the §2.2 queries)
+#
+# The T4S and T4EA guides carry many identical passages; where they do, both
+# documents are listed so either counts.
+
+version: 1
+corpus: teamcenter
+questions:
+
+  # --- the Gate 1 fixture queries (real questions, labels from their best chunks) ---
+  - id: tc-001
+    question: How do we read properties of a Teamcenter relation?
+    kind: procedure
+    source: gate1-fixture
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Gateway for Enterprise Applications - Basic Configuration Guide.pdf", contains: "properties directly on the relation objects"}
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Gateway for SAP Business Suite - Basic Configuration Guide.pdf", contains: "properties directly on the relation objects"}
+    evidence: "Since the Teamcenter version 10 it is possible to define properties directly on the relation objects ... T4x supports"
+
+  - id: tc-002
+    question: How to read BOM data from Teamcenter in AIG
+    kind: procedure
+    source: gate1-fixture
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Gateway for SAP Business Suite - Basic Configuration Guide.pdf", contains: "IndexedFieldMapping"}
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Gateway for Enterprise Applications - Basic Configuration Guide.pdf", contains: "IndexedFieldMapping"}
+    evidence: "The function ::T4X::TC::MAPPING::IndexedFieldMapping is used to read the structured data from Teamcenter."
+
+  - id: tc-003
+    question: How to send an email from T4X?
+    kind: procedure
+    source: gate1-fixture
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Gateway for Enterprise Applications - Basic Configuration Guide.pdf", contains: "DEFAULT_SMTP"}
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Gateway for SAP Business Suite - Basic Configuration Guide.pdf", contains: "DEFAULT_SMTP"}
+    evidence: "For T4x functionality of sending an email ... the communication channel DEFAULT_SMTP is required"
+
+  - id: tc-004
+    question: How does SAP distinguish if a BOM line was created in SAP or via an external system?
+    kind: fact
+    source: gate1-fixture
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Gateway for SAP Business Suite - Configuration Guide.pdf", section: "CAD Indicator"}
+    evidence: "If a BOM is created or modified in the SAP GUI and then modified again by T4S, you may find duplicated lines ... the SAP \"CAD Indicator\""
+
+  - id: tc-005
+    question: How do we update basic unit of measure in SAP?
+    kind: procedure
+    source: gate1-fixture
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Gateway for SAP Business Suite - Configuration Guide.pdf", section: "Basic Unit of Measure"}
+    evidence: "The basic unit of measure is a required SAP attribute for the Material Master. It can be changed as long as there are no orders for that material in SAP."
+
+  - id: tc-006
+    question: TC_transfer_area site preference
+    kind: identifier
+    source: gate1-fixture
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Multi-Site Collaboration.pdf", contains: "TC_transfer_area="}
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Gateway for SAP Business Suite - Basic Configuration Guide.pdf", contains: "TC_transfer_area preference"}
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Gateway for Enterprise Applications - Basic Configuration Guide.pdf", contains: "TC_transfer_area preference"}
+    evidence: "Full OS path to the directory ... TC_transfer_area=/tmp (Multi-Site 'Valid Values'); the T4x guides describe how its values are tried in turn"
+
+  - id: tc-007
+    question: EPM_attach_related_objects
+    kind: identifier
+    source: gate1-fixture
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Workflow Handlers.pdf", section: "EPM-attach-related-objects"}
+      - {doc: "Siemens/Teamcenter 2512/Workflow Designer on Rich Client.pdf", section: "EPM-attach-related-objects"}
+    evidence: "EPM-attach-related-objects { -relation= <relation-name> | -property= <property-name> } [-include_related_type= ...] (the handler's own reference section; the name alone appears in ~55 chunks that only mention it)"
+
+  # --- sampled from the guides ------------------------------------------------------
+  - id: tc-008
+    question: If SSO is enabled, how are the -u and -p arguments of Teamcenter utilities authenticated?
+    kind: fact
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Utilities.pdf", contains: "authenticated externally through SSO"}
+    evidence: "If Security Services single sign-on (SSO) is enabled ... the -u and -p arguments are authenticated externally through SSO rather than ... against the Teamcenter database."
+    # this note is repeated verbatim under every utility (~290 chunks): any of them is a correct answer
+
+  - id: tc-009
+    question: Which EPM-notify recipient sends email only to the users who have not yet made their decision on the task?
+    kind: identifier
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Workflow Handlers.pdf", contains: "have not set the decision"}
+    evidence: "$UNDECIDED — Sends email to the users who have not set the decision for the task."
+
+  - id: tc-010
+    question: What does the ExportPath option do in the workflow handler that exports dataset files?
+    kind: fact
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Workflow Handlers.pdf", contains: "Defines a directory to export files in datasets"}
+    evidence: "Defines a directory to export files in datasets. The presence of this option enables the export feature."
+
+  - id: tc-011
+    question: How does the FMS server cache (FSC) store downloaded files in its read cache?
+    kind: fact
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Administration.pdf", contains: "16K file fragments"}
+    evidence: "The FSC stores all file downloads as 16K file fragments in the read segment cache. Whole files are not stored."
+
+  - id: tc-012
+    question: Which utility lists all Teamcenter classes and their attributes?
+    kind: identifier
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Administration.pdf", contains: "taxonomy -f="}
+    evidence: "Lists the classes in the Teamcenter system and their attributes ... taxonomy -f=classes_and_attributes.txt"
+
+  - id: tc-013
+    question: Does T4x transfer an empty Teamcenter BOM to the ERP system?
+    kind: fact
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Gateway for SAP Business Suite - Basic Configuration Guide.pdf", contains: "empty Teamcenter BOM"}
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Gateway for Enterprise Applications - Basic Configuration Guide.pdf", contains: "empty Teamcenter BOM"}
+    evidence: "-no_transfer_of_empty_bom: If set to TRUE, an empty Teamcenter BOM ... will be ignored; else T4x will try and create an empty BOM"
+
+  - id: tc-014
+    question: How can Multi-Site Collaboration communicate through a firewall?
+    kind: fact
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Multi-Site Collaboration.pdf", contains: "communicating through firewalls"}
+    evidence: "Multi-Site Collaboration provides two methods for communicating through firewalls ... HTTP or HTTPS ... or remote procedure call (RPC)"
+
+  - id: tc-015
+    question: Which role is allowed to attach an ITAR license to a workspace object?
+    kind: fact
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Security.pdf", contains: "Attach ITAR license to a workspace object"}
+    evidence: "Attach ITAR license to a workspace object, ITAR_ADMIN = Yes ... IP_ADMIN = No"
+
+  - id: tc-016
+    question: Why are persistent properties not copied when a change object is derived?
+    kind: fact
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/BMIDE for Data Model Design.pdf", contains: "copyFromOrignal"}
+    evidence: "If copyFromOrignal is set to false on persistent properties, the properties are not copied during derive."
+
+  - id: tc-017
+    question: What has to match before an Access Manager rule tree can be imported from a file?
+    kind: fact
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Data Access Management.pdf", contains: "same types, roles, and groups"}
+    evidence: "the importing site must have the same types, roles, and groups as those referenced in the rule tree file"
+
+  - id: tc-018
+    question: Which dispatcher services does Teamcenter Substance Compliance need?
+    kind: fact
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Dispatcher  Deployment and Administration.pdf", contains: "Substance Compliance solution requires"}
+    evidence: "The Teamcenter Substance Compliance solution requires the following dispatcher services: Compliance Results Validation, Supplier Declaration Import, Supplier Declaration Re-Request ..."
+
+  - id: tc-019
+    question: How do I turn off database partitioning for the POM-revisable tables?
+    kind: procedure
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Environment Variables.pdf", section: "TC_SKIP_REV_PARTITION"}
+    evidence: "TC_SKIP_REV_PARTITION — Turns off database partitioning, when set to Y."
+
+  - id: tc-020
+    question: What is the default of BMF_BYPASS_ALL_EXTENSION_RULES and when should it be used?
+    kind: identifier
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Environment Variables.pdf", section: "BMF_BYPASS_ALL_EXTENSION_RULES"}
+    evidence: "Use this environment variable only for installations and upgrades ... The default value is OFF."
+
+  - id: tc-021
+    question: When do I need to set TCCS_CONFIG_HOME?
+    kind: fact
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Environment Variables.pdf", section: "TCCS_CONFIG_HOME"}
+    evidence: "This environment variable is required only when a custom TCCS configuration directory is used."
+
+  - id: tc-022
+    question: What steps are needed before T4x can transfer a new object or structure type?
+    kind: procedure
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Gateway for Enterprise Applications - Basic Configuration Guide.pdf", contains: "Modify Teamcenter preferences to describe which Teamcenter data"}
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Gateway for SAP Business Suite - Basic Configuration Guide.pdf", contains: "Modify Teamcenter preferences to describe which Teamcenter data"}
+    evidence: "1. Modify Teamcenter preferences ... 2. Adapt the mapping code in TCL ... 3. Use Trigger the ..."
+
+  - id: tc-023
+    question: How do I run Visualization Server Manager as a Linux daemon?
+    kind: procedure
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Installation Using Deployment Center.pdf", contains: "installservice.sh"}
+    evidence: "you can start Visualization Server Manager as a daemon by running the installservice.sh command for each jetty server"
+
+  - id: tc-024
+    question: Why should the Visualization Server Pool Assigner be started before the Visualization Server Manager?
+    kind: fact
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Installation Using Deployment Center.pdf", contains: "Pool Assigner (VPA) is not running"}
+    evidence: "If Visualization Server Pool Assigner (VPA) is not running, Visualization Server Manager displays console messages until it finds the VPA."
+
+  - id: tc-025
+    question: How can a workflow handler change the status of attachments when the task completes with EPM_go?
+    kind: identifier
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Workflow Designer on Rich Client.pdf", contains: "change_status_on_go"}
+      - {doc: "Siemens/Teamcenter 2512/Workflow Handlers.pdf", contains: "change_status_on_go"}
+    evidence: "-change_status_on_go= <[[old-status-name]:[new-status-name]]> (Optional) Adds, removes or changes the status of attachments when EPM_go is returned."
+
+  - id: tc-026
+    question: How do I rename custom workflow handlers and their arguments?
+    kind: procedure
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Workflow Designer on Rich Client.pdf", contains: "migrate_wf_handlers"}
+      - {doc: "Siemens/Teamcenter 2512/Workflow Handlers.pdf", contains: "migrate_wf_handlers"}
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Utilities.pdf", contains: "migrate_wf_handlers"}
+    evidence: "You can use a custom XML mapping file and the migrate_wf_handlers utility to rename your custom handlers and arguments"
+
+  - id: tc-027
+    question: How are substitute parts chosen when the original part in an assembly is unavailable?
+    kind: fact
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Structure Management on Rich Client  Usage.pdf", contains: "preferred substitute"}
+    evidence: "<Part X> and <Part Y> are set as the substitute parts for <Part A>, and <Part X> is the preferred substitute ..."
+
+  - id: tc-028
+    question: How do I run the TcFTSIndexer object data synchronization on an interval?
+    kind: procedure
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Data Indexing and Search Configuration.pdf", contains: "objdata:sync"}
+    evidence: "runTcFTSIndexer -task=objdata:sync -interval=25"
+
+  - id: tc-029
+    question: How do I make Active Workspace index the content of dataset files inline?
+    kind: procedure
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Data Indexing and Search Configuration.pdf", contains: "Awp0SearchDatasetIndexingBehavior"}
+    evidence: "Set the Awp0SearchDatasetIndexingBehavior constant to Inline ... Set the AWS_FullTextSearch_Index_Dataset_File_Content preference to true."
+
+  - id: tc-030
+    question: How do I create classification key-LOVs from a JSON file?
+    kind: procedure
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Basic Classification  Deployment and Administration.pdf", contains: "keylov_definitions"}
+    evidence: "-create -keylov_definitions -request= <JSON-file-name> — Create key-LOVs described in the given JSON file."
+
+  - id: tc-031
+    question: Why should the classification search constant not be set on WorkspaceObject, and how do I check it?
+    kind: fact
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Basic Classification  Deployment and Administration.pdf", contains: "gettypeconstantvalue"}
+    evidence: "Do not set this constant at the workspace level since this prevents your database from being indexable ... Verify ... using the gettypeconstantvalue utility"
+
+  - id: tc-032
+    question: How do I get a detailed PLM XML log file?
+    kind: procedure
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/TC XML and PLM XML Configuration for Data Import and Export.pdf", contains: "PLMXML_log_file_content"}
+    evidence: "Enable detailed logging (set the PLMXML_log_file_content preference to detailed)."
+
+  - id: tc-033
+    question: What must be true of site IDs for two sites to export objects to each other?
+    kind: fact
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Organization Management.pdf", contains: "site IDs must agree"}
+    evidence: "To support export of Teamcenter objects among multiple sites, site IDs must agree ... using exactly the same site ID in each definition."
+
+  - id: tc-034
+    question: How can I move volume files to other volumes based on rules?
+    kind: procedure
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Organization Management.pdf", contains: "move_volume_files"}
+    evidence: "volume reallocation rules ... defined in an XML file and managed with the -rulesfile and -outrulesfile arguments of the move_volume_files utility"
+
+  - id: tc-035
+    question: Can the system group be deleted?
+    kind: fact
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Organization Management.pdf", contains: "Do not delete the system group"}
+    evidence: "Warning Do not delete the system group from the database under any circumstances."
+
+  - id: tc-036
+    question: How do I control which commands users see in Active Workspace?
+    kind: procedure
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Active Workspace Customization.pdf", contains: "visibility of commands"}
+    evidence: "Control the visibility of commands ... using a combination of client-side conditions in the declarative command handlers, and server-side conditions in the Business Modeler IDE."
+
+  - id: tc-037
+    question: How do I make Visualization Convert produce PDFs optimized for Fast Web View?
+    kind: procedure
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Document Management  Deployment and Administration.pdf", contains: "PDFLinearized"}
+    evidence: "set PDFLinearized=om in the converter section of the vvcp.ini configuration file"
+
+  - id: tc-038
+    question: In which encoding must the rich client customer.properties file be saved?
+    kind: fact
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Localization.pdf", contains: "customer.properties"}
+    evidence: "Do not save the customer.properties file in Unicode or UTF-8 format. The customer.properties file must be in the default format (for example, ANSI)"
+
+  - id: tc-039
+    question: What must I run after removing the Localization button from a property?
+    kind: procedure
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Localization.pdf", contains: "l10n_purge_translations"}
+    evidence: "... then later decide to remove the button by setting the constant to false, you must run the l10n_purge_translations utility"
+
+  - id: tc-040
+    question: What does the T4S error "Field WERKS has been transferred inconsistently or is blank" mean?
+    kind: fact
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Gateway for SAP Business Suite - Configuration Guide.pdf", contains: "WERKS"}
+    evidence: "means that you tried to set plant specific data but did not give a valid Plant ID"
+
+  - id: tc-041
+    question: Why does a T4S material master search not find materials with purely numeric IDs?
+    kind: fact
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter Gateway for SAP Business Suite - Configuration Guide.pdf", contains: "leading zeros"}
+    evidence: "the result might not show MMs with IDs containing only numbers if the ID search string does not start with an asterisk (*) because of the leading zeros in the internal SAP number format"
+
+  - id: tc-042
+    question: What must be done for a fresh Linux Deployment Center deployment with Docker Swarm?
+    kind: procedure
+    source: sampled
+    status: draft
+    expect:
+      - {doc: "Siemens/Teamcenter 2512/Teamcenter_Deployment_Troubleshooting.pdf", contains: "Docker Swarm"}
+    evidence: "Deselect the \"Publish Active Workspace Client assets\" option in the \"Active Workspace Client Builder\" component"
+
+  # --- controls: nothing in the corpus answers these; the reranker must abstain ------
+  - id: tc-c01
+    question: how to bake sourdough bread
+    kind: control
+    source: gate1-fixture
+    status: verified
+    expect: []
+
+  - id: tc-c02
+    question: What is the best way to configure an nginx ingress on Kubernetes?
+    kind: control
+    source: sampled
+    status: draft
+    expect: []
+
+  - id: tc-c03
+    question: Which football club won the 2010 Champions League final?
+    kind: control
+    source: sampled
+    status: draft
+    expect: []

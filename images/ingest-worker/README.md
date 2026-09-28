@@ -44,7 +44,7 @@ nothing host-specific.
 | `cli.py` | `sync --subject <name\|all>` |
 | `config.py` | load `/config/config.yaml` |
 | `parse.py` | pass 1 — Docling → structure-aware chunks (owns the Docling import) |
-| `embed.py` / `embed_onnx.py` | pass 2 — BGE-M3 dense+sparse; ONNX/INT8 by default, FlagEmbedding/torch fallback |
+| `embed.py` / `embed_onnx.py` | pass 2 — BGE-M3 dense+sparse, ONNX/INT8 (model copied from the frozen models image) |
 | `manifest.py` | SQLite: persistent `docs` manifest + `staged_chunks` scratch |
 | `qdrant_io.py` | collection create, idempotent upsert, doc-scoped delete |
 | `sync.py` | hash-delta + two-pass orchestration |
@@ -54,7 +54,7 @@ nothing host-specific.
 - Volumes: corpora under `/data/docs/<subject>`, manifest at
   `/data/state/manifest.sqlite`, model caches under `/data/cache` (so they
   survive recreates).
-- Library API pins matter — Docling chunker, FlagEmbedding `encode` kwargs, and
+- Library API pins matter — the Docling chunker (`parse.py`'s API notes), and
   qdrant-client sparse models are pinned in `pyproject.toml`; re-verify on bump.
 - Collection layout (named `dense` + `sparse` vectors, `doc_id`/`subject` payload
   indexes) **must** match the docs-bridge query side.

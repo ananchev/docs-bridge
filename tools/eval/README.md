@@ -1,8 +1,10 @@
 # tools/eval
 
 Retrieval / embedding **quality + performance** tooling — the gates and diagnostics
-used to validate the ONNX/INT8 stack against the FlagEmbedding ground truth and to
-tune retrieval. Most of these drive the same code the server uses, so they run
+used to validate the ONNX/INT8 stack and every change under it, and to tune
+retrieval. (The ONNX-vs-FlagEmbedding gates of 2026-06, `validate_embed_parity.py`
+and `retrieval_parity.py`, were retired with the FlagEmbedding backend on
+2026-09-28; they are in git history.) Most of these drive the same code the server uses, so they run
 **inside the running docs-bridge container** (it has the baked models, mounted
 config, and the `qdrant` network alias). See each file's docstring header for the
 full flag/env list.
@@ -11,8 +13,8 @@ full flag/env list.
 
 | Script | Purpose |
 |---|---|
-| `validate_embed_parity.py` | **Gate 1** — vector parity: does the ONNX (and INT8) backend reproduce FlagEmbedding on real chunk texts, against hard thresholds? |
-| `retrieval_parity.py` | **Gate 2** — retrieval parity: does the ONNX stack return the same search results as the FlagEmbedding stack? The user-facing quality gate. |
+| `embed_upgrade_parity.py` | **Phase A gate (blocking for the Mac mini)** — does a new embedder *runtime* (onnxruntime/tokenizers/numpy) put text where the old one did, and no further from the stored vectors than the old runtime itself? `dump` inside each image, `compare` anywhere. Checks model bytes, token ids, old-vs-new vectors, and drift vs stored. |
+| `retrieval_ab.py` | **Gate 2, Mac mini old vs new** — the labelled question set (`notes/gate2/questions-*.yaml`) through the real `Searcher` in each image against the same collection: hit@k, MRR, control abstention; `compare` fails on any question the old image answered and the new one misses. |
 | `reembed_to_collection.py` | Re-embed an existing collection's chunks with the ONNX backend into a NEW collection — the substrate for Gate 2 and the embed-speed A/B. |
 | `recall_topn.py` | Decide whether lowering rerank `top_n` loses retrieval quality (one deep retrieve contains every smaller `top_n` as a prefix). |
 | `diag_channels.py` | Decompose hybrid retrieval to find WHICH first-stage channel fails to surface the rerank-confirmed gold chunk. |

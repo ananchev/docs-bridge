@@ -52,8 +52,17 @@ guarantee — a re-sync of an unchanged corpus reports `0 / 0 / 0`.
 Only **new + changed** documents are parsed. For each one, `parse.Parser`:
 
 - Converts the file with Docling (`DocumentConverter`). OCR is **off by default**
-  (it is the dominant CPU cost and is needless for digital PDFs); table-structure
+  and, when on, is RapidOCR on onnxruntime and selective (full-page only for pages
+  that are mostly bitmap, otherwise just the bitmap regions); table-structure
   detection stays on because tables carry real content. Both are config-toggled.
+  DOCX and PPTX get their own registered format options, so future enrichment flags
+  reach Office files too.
+- **Office content docling extracts but would drop** is put back into the text:
+  PPTX **speaker notes** (docling files them in a `notes` layer the chunker skips —
+  a notes-only deck would yield no chunks) are moved into the slide's body as
+  `Speaker notes: …`; authored image **alt-text** (`descr` in DOCX/PPTX, ignored by
+  docling) becomes the picture's caption `Figure: …`, matched to the picture by its
+  pixels, never by position. Placeholder and auto-generated alt-text is skipped.
 - Chunks the document with Docling's `HybridChunker`, which merges undersized
   blocks and splits oversized ones toward the configured token budget.
 - Emits a `Chunk` per non-empty piece, carrying its `section_path` (the joined

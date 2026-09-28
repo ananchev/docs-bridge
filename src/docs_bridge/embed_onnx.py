@@ -1,10 +1,11 @@
-"""Pass 2 - embed, ONNX backend (alternative to the FlagEmbedding/torch path).
+"""Pass 2 - embed, ONNX backend (the only backend; the FlagEmbedding/torch path it
+replaced was removed 2026-09-28).
 
 Runs the SAME BAAI/bge-m3 model as `embed.py`, but through ONNX Runtime instead
 of torch — the goal is CPU throughput (and an optional INT8 weight quantization).
-It is a drop-in for `embed.Embedder`: same `encode(texts) -> (dense, sparse)`
-contract, and sparse vectors land in the *same BGE-M3 token-id index space* so
-they stay compatible with documents embedded by the torch backend.
+It implemented the same `encode(texts) -> (dense, sparse)` contract as the old
+torch backend, and sparse vectors land in the *same BGE-M3 token-id index space*,
+so documents embedded by either stay compatible.
 
 Design (strategy "encoder in ONNX, heads in numpy"):
   * The big XLM-RoBERTa encoder is exported to ONNX (and optionally INT8-quantized)

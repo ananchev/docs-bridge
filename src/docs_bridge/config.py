@@ -97,10 +97,10 @@ class Config:
     # means a file must match one); exclude = blacklist (exclude wins). See scan().
     include: list[str] = field(default_factory=list)
     exclude: list[str] = field(default_factory=list)
-    # Embedding backend (design: ONNX/INT8 validated 2026-06-21 as the default —
-    # 4.5x faster than FlagEmbedding/torch, retrieval quality on par). The INT8 model
-    # is baked into the image at onnx_model_dir; "flagembedding" stays as a fallback.
-    embedding_backend: str = "onnx"        # "onnx" | "flagembedding"
+    # Embedding backend: ONNX/INT8 (validated 2026-06-21 — 4.5x faster than the
+    # FlagEmbedding/torch path at on-par retrieval quality; that fallback was removed
+    # 2026-09-28). The INT8 model is baked into the image at onnx_model_dir.
+    embedding_backend: str = "onnx"        # "onnx" only
     embedding_int8: bool = True            # onnx only: model.int8.onnx vs model.onnx
     onnx_model_dir: str = "/opt/bge-m3-onnx"
     rerank: RerankCfg = field(default_factory=RerankCfg)    # server only

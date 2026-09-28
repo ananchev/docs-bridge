@@ -6,7 +6,7 @@ with per-script descriptions and sample invocations.
 | Subdir | What's in it |
 |---|---|
 | [`ingest/`](ingest/) | Get source docs from the Nextcloud archive into the corpus (Doxygen / Javadoc / SOA libs + WSDL → Markdown conversion, tag-driven copy, prune/reconcile, run the worker). |
-| [`eval/`](eval/) | Retrieval & embedding quality gates and diagnostics (ONNX/INT8 vs FlagEmbedding parity, `top_n` recall, channel diagnosis, search latency). |
+| [`eval/`](eval/) | Retrieval & embedding quality gates and diagnostics (embed parity across a runtime upgrade, reranker A/B, end-to-end retrieval A/B on labelled questions, `top_n` recall, channel diagnosis, search latency). |
 | [`onnx-export/`](onnx-export/) | One-time offline build steps converting the BAAI models to the ONNX dirs the runtime loads. |
 
 None of these are part of the `docs_bridge` runtime package — they're invoked

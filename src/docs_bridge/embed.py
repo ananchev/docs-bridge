@@ -2,12 +2,13 @@
 
 BGE-M3 produces a dense vector AND a sparse (lexical) vector in a single forward
 pass, which is exactly the hybrid signal we store in Qdrant (design §12.4: dense
-+ sparse in one model, not a separate BM25). This module owns the FlagEmbedding
-import so the model loads only after the parse pass has released Docling.
-
-API note: pinned to FlagEmbedding==1.3.3. `BGEM3FlagModel.encode(...,
-return_dense=True, return_sparse=True)` returns a dict with `dense_vecs`
-(ndarray) and `lexical_weights` (list of {token_id_str: weight}).
++ sparse in one model, not a separate BM25). The backend is ONNX/INT8
+(`embed_onnx.OnnxEmbedder`), validated as the default on 2026-06-21. The
+FlagEmbedding/torch fallback was removed on 2026-09-28 (multi-user rollout §4.3):
+ONNX had been the only backend in use since the INT8 adoption, and dropping it
+removes FlagEmbedding's transitive pins from the upgrade. This module keeps the
+backend-neutral pieces: the `SparseVec` container and the `get_embedder` factory
+that both the ingest worker and the server call, so they always load the same model.
 """
 
 from __future__ import annotations
@@ -22,26 +23,23 @@ log = logging.getLogger(__name__)
 
 
 class EmbedderProto(Protocol):
-    """Both backends expose the same encode contract; the factory returns either."""
+    """The encode contract every embedder backend exposes."""
 
     def encode(self, texts: list[str]) -> tuple[list[list[float]], list["SparseVec"]]:
         ...
 
 
 def get_embedder(cfg: "Config") -> EmbedderProto:
-    """Select the embedding backend from config. ONNX/INT8 is the validated default
-    (2026-06-21); "flagembedding" is the torch fallback. Imports are lazy so only the
-    chosen backend's heavy deps (onnxruntime vs FlagEmbedding/torch) get loaded.
-    """
+    """The configured embedder. ONNX is the only backend; the import is lazy so the
+    parse pass never loads onnxruntime alongside Docling."""
     backend = getattr(cfg, "embedding_backend", "onnx")
     if backend == "onnx":
         from .embed_onnx import OnnxEmbedder
 
         return OnnxEmbedder(cfg.onnx_model_dir, use_int8=cfg.embedding_int8)
-    if backend == "flagembedding":
-        return Embedder(cfg.embedding_model)
     raise ValueError(
-        f"unknown embedding_backend {backend!r} (expected 'onnx' or 'flagembedding')"
+        f"unknown embedding_backend {backend!r}: only 'onnx' is supported "
+        f"('flagembedding' was removed on 2026-09-28)"
     )
 
 
@@ -53,37 +51,3 @@ class SparseVec:
     def __init__(self, indices: list[int], values: list[float]) -> None:
         self.indices = indices
         self.values = values
-
-
-class Embedder:
-    def __init__(self, model_name: str, use_fp16: bool = False) -> None:
-        from FlagEmbedding import BGEM3FlagModel
-
-        # use_fp16=False: CPU on the Pi has no fp16 speedup and we want bit-for-bit
-        # parity with the M2. Flip per-host later via config if the M2 benefits.
-        log.info("loading embedding model %s", model_name)
-        self.model = BGEM3FlagModel(model_name, use_fp16=use_fp16)
-
-    def encode(self, texts: list[str]) -> tuple[list[list[float]], list[SparseVec]]:
-        out = self.model.encode(
-            texts,
-            return_dense=True,
-            return_sparse=True,
-            return_colbert_vecs=False,
-        )
-        dense = [vec.tolist() for vec in out["dense_vecs"]]
-        sparse = [self._to_sparse(lw) for lw in out["lexical_weights"]]
-        return dense, sparse
-
-    @staticmethod
-    def _to_sparse(lexical_weights: dict) -> SparseVec:
-        # lexical_weights maps stringified token ids -> weights; drop zeros.
-        indices: list[int] = []
-        values: list[float] = []
-        for tok, weight in lexical_weights.items():
-            w = float(weight)
-            if w <= 0.0:
-                continue
-            indices.append(int(tok))
-            values.append(w)
-        return SparseVec(indices=indices, values=values)

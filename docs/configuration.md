@@ -15,7 +15,7 @@ the image — that is the whole portability model: change the config, not the co
 |---|---|---|
 | `embedding_model` | `BAAI/bge-m3` | The embedding model identity. The stack is built around BGE-M3; changing it implies re-exporting the ONNX dirs. |
 | `embedding_dim` | `1024` | Dense vector size. Must match the model and the Qdrant collection. |
-| `embedding_backend` | `onnx` | `onnx` (default) or `flagembedding`. See [embeddings.md](embeddings.md). |
+| `embedding_backend` | `onnx` | `onnx` only (`flagembedding` was removed 2026-09-28). See [embeddings.md](embeddings.md). |
 | `embedding_int8` | `true` | ONNX only: load `model.int8.onnx` vs `model.onnx`. |
 | `onnx_model_dir` | `/opt/bge-m3-onnx` | Where the baked embedder model dir lives (set by the image). |
 | `manifest_path` | `/data/state/manifest.sqlite` | The SQLite manifest + staging DB. |
@@ -34,7 +34,7 @@ the image — that is the whole portability model: change the config, not the co
 
 | Key | Default | Notes |
 |---|---|---|
-| `ocr` | `false` | EasyOCR is slow on CPU and needless for digital PDFs. Enable only for scanned corpora. |
+| `ocr` | `false` | RapidOCR on onnxruntime (was EasyOCR/torch before 2026-09). Selective, not per page: a page is OCR'd in full only when bitmaps cover >75% of it, otherwise only its bitmap regions. Enable for corpora with scans. |
 | `table_structure` | `true` | Keep table detection — tables carry real content. |
 
 ## `qdrant`

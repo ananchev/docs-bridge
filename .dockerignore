@@ -1,5 +1,5 @@
 # Build context is the REPO ROOT for both images (ingest-worker, docs-bridge), so
-# keep it lean — the Dockerfiles only COPY pyproject.toml, src/, tools/.
+# keep it lean — the Dockerfiles only COPY pyproject.toml, src/, the locks.
 .git/
 **/__pycache__/
 **/*.pyc
@@ -10,6 +10,9 @@ venv/
 .DS_Store
 *.md
 images/
+# ...except the dependency locks the Dockerfiles install (images/lock.sh)
+!images/ingest-worker/requirements.lock
+!images/docs-bridge/requirements-*.lock
 provisioning/
 application_data/
 *.sh

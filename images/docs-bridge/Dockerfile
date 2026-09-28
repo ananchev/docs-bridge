@@ -1,17 +1,24 @@
 # docs-bridge server — hybrid search -> rerank -> MCP/REST (design §9/§15).
 #
-# Build CONTEXT is the repo root (shares the docs_bridge package + tools/ with the
-# ingest-worker image), so build with:
-#     docker build -f images/docs-bridge/Dockerfile -t docs-bridge:latest .
+# Build CONTEXT is the repo root (shares the docs_bridge package with the
+# ingest-worker image), so build with (vhost2):
+#     sudo podman build -f images/docs-bridge/Dockerfile \
+#         -t localhost/docs-bridge:<tag> .
+# Always tag fully qualified (localhost/...): the image deployed until 2026-09 was
+# tagged from a bare name and landed under docker.io/library/, one `podman pull`
+# away from being replaced by a registry image.
 #
-# aarch64 Linux only (Pi 5 + M2 Asahi); build once, run on both (§1). Build on the
-# M2 (16GB) and distribute the saved image — the 8GB Pi cannot run the INT8 quantize
-# step (OOM), same as the ingest-worker.
+# Two targets, one Dockerfile: linux/arm64 (the Mac mini, vhost2) and linux/amd64
+# (the EC2 host). TARGETARCH picks the matching lock. The CUDA reranker for the GPU
+# target is plan §6.3 and not built here yet — this image is CPU on both arches.
 #
-# The server holds TWO baked INT8 models resident: the bge-m3 embedder (for the
-# query vector — the SAME model ingest used, so vectors match) and the bge-reranker
-# cross-encoder. Both are exported in a discarded `exporter` stage; the runtime
-# image copies in only the INT8 files. No torch / no Docling at runtime.
+# The server holds TWO INT8 models resident: the bge-m3 embedder (for the query
+# vector — the SAME bytes ingest used, so vectors match) and the bge-reranker
+# cross-encoder. Neither is exported here any more: both come from the frozen models
+# image (images/models/Dockerfile). No torch / no Docling at runtime.
+ARG MODELS_IMAGE=localhost/docs-bridge-models:frozen-2026-09
+FROM ${MODELS_IMAGE} AS models
+
 FROM python:3.11-slim-bookworm AS base
 
 # onnxruntime needs libgomp (OpenMP). No libgl/Docling deps — the server never parses.
@@ -24,37 +31,29 @@ ENV HOME=/data/cache \
     PYTHONUNBUFFERED=1
 
 WORKDIR /app
+
+# --- deps: the full locked set for this arch (hashes checked) -------------------
+FROM base AS deps
+ARG TARGETARCH
+COPY images/docs-bridge/requirements-${TARGETARCH}.lock ./requirements.lock
+RUN pip install --no-cache-dir --require-hashes -r requirements.lock
+
+# --- runtime: deps + ONLY the INT8 files the two loaders read + the app ----------
+FROM deps AS runtime
+# bge-m3 embedder (OnnxEmbedder): int8 encoder + sparse head + tokenizer + meta.
+COPY --from=models /opt/bge-m3-onnx/model.int8.onnx \
+                   /opt/bge-m3-onnx/sparse_linear.npz \
+                   /opt/bge-m3-onnx/tokenizer.json \
+                   /opt/bge-m3-onnx/meta.json \
+                   /opt/bge-m3-onnx/
+# bge-reranker cross-encoder (OnnxReranker): int8 model + tokenizer + meta.
+COPY --from=models /opt/bge-reranker-onnx/model.int8.onnx \
+                   /opt/bge-reranker-onnx/tokenizer.json \
+                   /opt/bge-reranker-onnx/meta.json \
+                   /opt/bge-reranker-onnx/
 COPY pyproject.toml ./
 COPY src ./src
-# .[server] = the shared core + FastMCP + uvicorn. Lean: no torch, no Docling.
-RUN pip install --no-cache-dir '.[server]'
-
-# --- exporter: build-time self-export of BOTH INT8 models ---------------------
-# Discarded stage. .[ingest,export] reproduces the exact torch+transformers env that
-# produced the validated bge-m3 INT8 model, plus onnx. Each model is exported then
-# quantized in SEPARATE processes so the torch (~2.3GB) and quantize (~4-6x model)
-# peaks never stack — the 8GB Pi rule, harmless on the M2.
-FROM base AS exporter
-COPY tools ./tools
-RUN pip install --no-cache-dir '.[ingest,export]'
-RUN python tools/onnx-export/export_bge_m3_onnx.py --out /opt/bge-m3-onnx
-RUN python tools/onnx-export/export_bge_m3_onnx.py --out /opt/bge-m3-onnx --quantize-only
-RUN python tools/onnx-export/export_bge_reranker_onnx.py --out /opt/bge-reranker-onnx
-RUN python tools/onnx-export/export_bge_reranker_onnx.py --out /opt/bge-reranker-onnx --quantize-only
-
-# --- runtime: base + ONLY the INT8 files the two loaders read -----------------
-FROM base AS runtime
-# bge-m3 embedder (OnnxEmbedder): int8 encoder + sparse head + tokenizer + meta.
-COPY --from=exporter /opt/bge-m3-onnx/model.int8.onnx \
-                     /opt/bge-m3-onnx/sparse_linear.npz \
-                     /opt/bge-m3-onnx/tokenizer.json \
-                     /opt/bge-m3-onnx/meta.json \
-                     /opt/bge-m3-onnx/
-# bge-reranker cross-encoder (OnnxReranker): int8 model + tokenizer + meta.
-COPY --from=exporter /opt/bge-reranker-onnx/model.int8.onnx \
-                     /opt/bge-reranker-onnx/tokenizer.json \
-                     /opt/bge-reranker-onnx/meta.json \
-                     /opt/bge-reranker-onnx/
+RUN pip install --no-cache-dir --no-deps .
 
 EXPOSE 8080
 ENTRYPOINT ["docs-bridge-server"]

@@ -98,6 +98,14 @@ from the extras split by itself.
 The gate already exists — this is the same methodology that cleared INT8 adoption
 (`docs-bridge-fastembed-evaluation`, Gates 1 and 2).
 
+> **Update 2026-09-28:** executed as Phase A (`notes/phase-a-runbook.md`). Gate A is
+> now `tools/eval/embed_upgrade_parity.py` — `validate_embed_parity.py` compared ONNX
+> against FlagEmbedding and was retired with that backend. And the premise below that
+> `model.int8.onnx` "is byte-identical across the upgrade" was **not true of the
+> build as it stood**: both Dockerfiles re-exported the model from the installed
+> torch/transformers/onnxruntime on every build. The models are now a frozen artifact
+> (`images/models/`), which makes the premise true.
+
 **Gate A — vector parity (blocking).** `tools/eval/validate_embed_parity.py`, sampling
 real chunk texts from the populated `teamcenter` collection, old runtime as ground truth
 vs new. **Pass condition: dense cosine ≥ 0.999 and sparse Jaccard ≥ 0.95.** The baked
@@ -180,7 +188,8 @@ Defer Tier 3 until Tier 1–2 are in and the pilot has measured real figure coun
 3. **Re-verify the two API notes** in `parse.py`'s module docstring —
    `docling.chunking.HybridChunker` and `chunk.meta.headings` — which the docstring
    already flags as things to re-check on a bump.
-4. **Gate A.** Build the image, run `validate_embed_parity.py` against `teamcenter`.
+4. **Gate A.** Build the image, run `validate_embed_parity.py` against `teamcenter`
+   (*now `embed_upgrade_parity.py`, runbook step 4*).
    **Stop here if it fails.**
 5. **Tier 1 + 2** — format options for DOCX/PPTX, alt-text, RapidOCR, fix the OCR
    comment at `parse.py:80`.

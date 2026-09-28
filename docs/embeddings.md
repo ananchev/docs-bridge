@@ -19,19 +19,21 @@ index to maintain.
 
 The dense vector is 1024-dimensional (`embedding_dim`), cosine distance.
 
-## The two backends
+## The backend
 
-`embed.get_embedder(cfg)` selects a backend from config and returns it behind a
-common `encode(texts) -> (dense, sparse)` contract:
+`embed.get_embedder(cfg)` returns the embedder behind an `encode(texts) -> (dense,
+sparse)` contract. There is one backend, `onnx` (`embed_onnx.OnnxEmbedder`:
+onnxruntime + tokenizers, INT8 by default, ~4–5× the CPU throughput of the torch
+path it was validated against in 2026-06 at on-par retrieval quality). The
+FlagEmbedding/torch fallback was removed on 2026-09-28; its sparse vectors were in
+the **same BGE-M3 token-id space**, so corpora it embedded stay queryable.
 
-| `embedding_backend` | Module | Deps | When |
-|---|---|---|---|
-| `onnx` *(default)* | `embed_onnx.OnnxEmbedder` | onnxruntime, tokenizers | The validated default — runs the same model with no torch, optionally INT8-quantized for ~4–5× the CPU throughput of the torch path at on-par retrieval quality. |
-| `flagembedding` | `embed.Embedder` | FlagEmbedding, torch | Reference/fallback. Useful for parity checks against the ONNX path. |
-
-Imports are lazy, so only the chosen backend's heavy dependencies load. Both
-backends emit sparse vectors in the **same BGE-M3 token-id space**, so a corpus
-embedded by one backend stays queryable by the other.
+**Runtime parity.** The worker (documents) and the server (queries) must run the
+embedder on the *same* onnxruntime, tokenizers and numpy, and the same model bytes —
+or query vectors drift from stored ones. Both images install from locks that pin
+those identically (`images/lock.sh` checks it), and both copy the model from one
+frozen artifact. A runtime bump is gated by `tools/eval/embed_upgrade_parity.py`
+against the stored vectors (`notes/phase-a-runbook.md` step 4).
 
 ### How the ONNX backend stays faithful
 
@@ -44,7 +46,7 @@ so quantization never touches them:
 - **Sparse** = `relu(last_hidden_state @ sparse_linear)` per token position, then
   **max-pooled per token id** with special tokens dropped. This is a faithful
   reimplementation of FlagEmbedding's token-weight processing, which is what
-  guarantees token-id parity with the torch backend.
+  guaranteed token-id parity with the (since removed) torch backend.
 
 The ONNX model directory the loader reads contains: `model.onnx` (+
 `model.int8.onnx`), `tokenizer.json`, `sparse_linear.npz` (the sparse head
@@ -80,22 +82,27 @@ python tools/onnx-export/export_bge_m3_onnx.py       --out ./models/bge-m3-onnx 
 python tools/onnx-export/export_bge_reranker_onnx.py --out ./models/bge-reranker-onnx --quantize
 ```
 
-The application Dockerfiles run these in a throwaway `exporter` build stage and copy
-only the INT8 files into the runtime image, so the models are **baked in** — the
-serving container needs no network and no torch. The models are host-invariant, so
-baking them does not break the config-only portability model; only host-*variable*
-values stay in the mounted config.
+The models are **baked in** — the serving container needs no network and no torch —
+but since 2026-09 they are **not exported during an image build**. They live in a
+separate models image (`images/models/Dockerfile`, tag
+`localhost/docs-bridge-models:<version>`) that both app images copy from. Until then
+each build re-exported them from whatever torch/transformers/onnx/onnxruntime it had
+installed, which made the model a by-product of the dependency set: a dependency bump
+would have silently produced a different `model.int8.onnx` under vectors the old one
+had made. The current tag was taken byte-for-byte out of the images deployed before
+the 2026-09 upgrade. A new model (e.g. the GPU fp16 reranker) is exported with the
+scripts above and published as a new models tag. The models are host-invariant, so
+baking them does not break the config-only portability model.
 
 > The INT8 quantization step is memory-hungry (it loads the full-precision ONNX and
-> works over copies of it). On a low-RAM build host, export on a roomier machine and
-> ship the resulting image, or split the export and quantize into separate processes
-> so their peaks don't stack (which is what the Dockerfiles do).
+> works over copies of it). Run the export and the quantize as separate processes
+> (`--quantize-only`) so their peaks don't stack.
 
 ## Tuning knobs
 
 | Config | Effect |
 |---|---|
-| `embedding_backend` | `onnx` (default) or `flagembedding`. |
+| `embedding_backend` | `onnx` (the only backend). |
 | `embedding_int8` | ONNX only: load `model.int8.onnx` vs `model.onnx`. |
 | `onnx_model_dir` | Where the baked embedder model dir lives. |
 | `ingest.batch_size` | Chunks per embed batch — the main ingest memory/throughput dial. |

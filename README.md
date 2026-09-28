@@ -60,9 +60,12 @@ socket) on a Linux host. The images are built for `aarch64`/`arm64`.
 # 1. Configure: copy the example and edit the subjects + paths.
 cp config.example.yaml config.yaml
 
-# 2. Build the three images (build context is the repo root for the two app images).
-docker build -f images/ingest-worker/Dockerfile -t ingest-worker:latest .
-docker build -f images/docs-bridge/Dockerfile  -t docs-bridge:latest  .
+# 2. Build the images (build context is the repo root for the two app images).
+#    The app images copy their ONNX models from a models image, which must exist
+#    first: load a saved one (docker load -i docs-bridge-models-*.tar), or see
+#    images/models/Dockerfile. Tag fully qualified (localhost/...).
+docker build -f images/ingest-worker/Dockerfile -t localhost/ingest-worker:latest .
+docker build -f images/docs-bridge/Dockerfile  -t localhost/docs-bridge:latest  .
 docker build -t qdrant:local images/qdrant
 
 # 3. Put the vector store and the apps on one network.

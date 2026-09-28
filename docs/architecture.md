@@ -53,7 +53,7 @@ by the MCP tool and the REST endpoint, so those two surfaces cannot diverge eith
 | `config.py` | Loads and validates `config.yaml` into typed dataclasses. The whole host-portability story is config-only — nothing host-specific is baked into an image. |
 | `models.py` | Plain dataclasses shared across passes: `Subject`, `Chunk`, `DocState`, `SyncStats`. |
 | `parse.py` | **Ingest pass 1.** Scans the subject dirs (with include/exclude filters), parses each file with Docling, and emits structure-aware `Chunk`s. |
-| `embed.py` / `embed_onnx.py` | **Ingest pass 2 / query embedding.** BGE-M3 → dense + sparse vectors. `embed_onnx` is the default ONNX/INT8 backend; `embed` is the FlagEmbedding/torch fallback. `get_embedder()` picks one from config. |
+| `embed.py` / `embed_onnx.py` | **Ingest pass 2 / query embedding.** BGE-M3 → dense + sparse vectors. `embed_onnx` is the ONNX/INT8 backend (the only one since the FlagEmbedding/torch fallback was removed, 2026-09-28); `embed` holds `get_embedder()` and the `SparseVec` container. |
 | `manifest.py` | The SQLite manifest (persistent `docs` table for hash-delta detection) and the per-run `staged_chunks` scratch table. |
 | `qdrant_io.py` | Collection creation, idempotent upserts, doc-scoped deletes. Owns the Qdrant payload/vector layout. |
 | `sync.py` | The ingest orchestrator: scan → classify → pass 1 → pass 2. |
