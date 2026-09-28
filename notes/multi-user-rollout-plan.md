@@ -90,6 +90,27 @@ brings a new `HybridChunker`, so chunk boundaries move. With a new database that
 nothing — but only if the corpus is parsed **once**, by the final toolchain. Any test
 ingest done before §4 must be thrown away.
 
+### 1.1 Two deployment targets, two different corpora (decided 2026-09-28)
+
+Both are required in the end; neither is the other's fallback.
+
+| | Mac mini (vhost2) | AWS GPU (EC2) |
+|---|---|---|
+| Corpus | existing `teamcenter` (138k chunks, **old toolchain**) — stays | new work-archive corpus (SKF/HxGN, **new toolchain**) |
+| Ingested on | vhost2 | vhost2 (`work-archive-ingest-plan.md`), served from x86 |
+| Reranker | CPU, dynamic INT8, `threads` tuned — **unchanged** | CUDA, fp16, length-bucketed at 8 |
+| Quality check | **old vs new image on the same `teamcenter`** (chunk-ID comparable), fp32 judge | absolute: labelled work-archive questions + fp16-vs-fp32 numerics |
+
+One codebase: the targets differ only in reranker runtime and config
+(`rerank.device` / `rerank.precision`, §6.3), never in the embedder. Consequences:
+
+- **The sequencing lock above binds the EC2 corpus**, not `teamcenter`.
+- **§4.1's "the pins dissolve" holds only for EC2.** The Mac mini's server queries
+  137k vectors embedded by the *old* runtime, so upgrading its image makes
+  `stack-upgrade-strategy.md`'s embed-parity gate against `teamcenter` blocking again.
+- **§5.1's cross-architecture check is blocking for EC2**: its corpus is embedded on
+  aarch64 (vhost2) and queried on x86.
+
 ---
 
 ## 2. Gate 1 — measure before building
@@ -201,7 +222,7 @@ is 2.86x faster, and it also fails the bar** — not because padding matters (ma
 attention cannot see it) but because `quantize_dynamic` recomputes activation scales
 per batch, moving scores up to 1.41 logits. That points at a real follow-up:
 **static/calibrated INT8 would make bucketing numerically inert and its 2.86x free**
-(Gate 2 candidate; the §2.2 fixture is a ready calibration set).
+(the §2.2 fixture is a ready calibration set). **Not pursued (decided 2026-09-28):** the Mac mini stays on today's dynamic INT8 without bucketing — it works fine for its single user, and the GPU target does not need INT8 at all.
 
 ---
 
@@ -244,10 +265,10 @@ branch lands, so a future bump has a known-good baseline to diff against.
 - `tokenizers` / `transformers` → whatever the new docling set resolves to.
 - `numpy<2` → likely liftable; the `<2` cap exists for the old docling/FlagEmbedding
   set. Resolve deliberately and comment it, in the style the file already uses.
-- `torch` → still arrives via docling. Dropping the `FlagEmbedding` fallback backend
-  is worth considering while the file is open (ONNX is the default and has been since
-  the INT8 adoption), but `docling-slim[standard]` still pulls torch, so the worker
-  image does not shrink from that alone.
+- `torch` → still arrives via docling. **`FlagEmbedding` fallback backend: DROPPED
+  (decided 2026-09-28)** — ONNX is the default and has been since the INT8 adoption.
+  `docling-slim[standard]` still pulls torch, so the worker image does not shrink from
+  that alone.
 
 ### 4.4 What to turn on while the file is open
 
@@ -299,10 +320,12 @@ surface.
 
 ### 5.2 Reranker A/B (blocking for the GPU path)
 
-Modify `tools/eval/recall_topn.py` to parameterise the **reranker** instead of
-`top_n`. It already drives the real `Searcher` inside the container against the real
-config, so the change is small and the comparison stays honest. Compare, on the §2.2
-fixture plus the live collection:
+~~Modify `tools/eval/recall_topn.py`~~ — **dropped 2026-09-28**: reranker numerics are
+covered by `rerank_ab.py` (fixture + fp32 judge, offline replay). End-to-end old vs
+new on the Mac mini goes through a new `tools/eval/retrieval_ab.py` instead: the same
+labelled question set run through the real `Searcher` in the old and the new image
+against the same `teamcenter`, compared by chunk ID and judged against fp32 (§1.1).
+Compare, on the §2.2 fixture:
 
 1. CPU INT8, old toolchain (the recorded baseline)
 2. CPU INT8, new toolchain

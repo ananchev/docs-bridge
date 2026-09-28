@@ -356,7 +356,7 @@ quantization fixes activation scales at export time, which would make batch
 composition irrelevant and bucketing numerically inert — turning a rejected 2.86x
 into a free one. That needs its own A/B against the baseline (static vs dynamic is
 itself a numerics change) and the §2.2 fixture is already a ready-made calibration
-set. **Recorded as a Gate 2 candidate, not done here.**
+set. **Recorded as a Gate 2 candidate, not done here.** **Not pursued (decided 2026-09-28):** the Mac mini stays on today's dynamic INT8 without bucketing — it works fine for its single user, and the GPU target does not need INT8 at all.
 
 ## §2.3 — GPU: T4 is 26x faster; the "FAIL" is the reference, not the GPU
 
@@ -484,8 +484,8 @@ the hardware decision).
   and should be read as "the top-6 set changed", not "got worse". `bge-reranker-base`
   stays rejected on its other evidence (top-3 changed on 7/7, a disjoint top-6 on
   TC_transfer_area, control margin −3.86 vs −5.60) — but that is now a judgement, not
-  a confirmed regression. INT8 bucketing is moot on the GPU path; on the CPU path it
-  should be re-judged against fp32 alongside static quantization (Gate 2).
+  a confirmed regression. INT8 bucketing is moot on the GPU path, and the Mac mini
+  stays on unbucketed dynamic INT8 (decided 2026-09-28), so it is closed.
 - **The A/B harness now takes an fp32 reference (done 2026-09-28).**
   `rerank_ab.py --reference <run.json>` judges against a saved run instead of the
   fixture's INT8 column, adjudicates with that reference as a *fixed* judge over the

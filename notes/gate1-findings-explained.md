@@ -115,7 +115,9 @@ batch*. Change who shares a batch, and every score in it shifts.
 conversion is calibrated **once at build time** (static quantization) instead of per
 batch, regrouping becomes mathematically invisible and the 2.86x becomes free. The
 fixture we just built is exactly the calibration data that needs. This is now the
-most promising cheap idea on the table, logged for Gate 2.
+most promising cheap idea on the table, logged for Gate 2. *(Later decided not
+to pursue: the Mac mini keeps today's INT8, which works fine for one user, and the
+team's GPU server does not need INT8 at all.)*
 
 ## Test 5 — "is a GPU fast enough?" (the T4 probe, and bucketing again)
 
