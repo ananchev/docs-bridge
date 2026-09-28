@@ -287,15 +287,20 @@ idea of calibrating INT8 once at build time.
 
 ## Where this leaves the decision
 
-**Recommendation: go GPU.** A T4-class NVIDIA card, x86_64, fp16, with length
+**Decided (2026-09-28): go GPU.** A T4-class NVIDIA card, x86_64, fp16, with length
 grouping at 8. That cuts the rerank from 14.2 s to ~0.3 s, and it is the only lever
 Gate 1 found that does not trade answers for speed.
 
-**One thing needs an explicit yes, because it changes a rule we set in advance.** The
-quality bar compared everything to today's INT8 rankings. Test 5 showed those
-rankings are themselves ~1 point off the real model. From here on, candidates should
-be judged against **the real model (fp32)**, not against INT8. Under the old rule
-nothing more accurate than INT8 can ever pass; under the new one fp16 passes cleanly.
+**And the quality bar changed, deliberately, after the results.** It used to compare
+everything to today's INT8 rankings. Test 5 showed those rankings are themselves ~1
+point off the real model, so under that rule nothing more accurate than INT8 could
+ever pass. It was like grading against an answer key with typos in it. **From now on,
+candidates are judged against the real model (fp32).** fp16 passes that cleanly.
+Changing a rule after seeing results is normally a red flag. It is fair here because
+the reason does not depend on anyone's judgement: the original model itself fails
+the old rule. The alternatives were a one-off exception for the GPU (the next
+comparison would hit the same broken rule) or having an expert grade the disputed
+chunks (worth doing some day, not needed to pick hardware).
 
 What else Gate 1 leaves behind:
 

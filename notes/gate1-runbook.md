@@ -425,11 +425,17 @@ padding or masking — and so backs the Gate 2 static-quantization idea.
 
 ## Decision
 
-**Recommended: the GPU path (T4-class, x86_64, fp16, length-bucketed at 8) —
-pending sign-off on one reinterpretation, stated plainly:** the §2.4 bar was set with
-the CPU-INT8 ranking as the reference; this run shows that reference is itself ~1
-logit off the unquantized model, so no *more* precise scorer can pass it. Judged
-against the model as published (fp32), fp16 on the T4 is faithful to 0.01 and 8/8.
+**DECIDED 2026-09-28: the GPU path (T4-class, x86_64, fp16, length-bucketed at 8),
+and the quality bar's reference is switched from CPU-INT8 to fp32.** The §2.4 bar
+was set with the CPU-INT8 ranking as the reference; this run shows that reference is
+itself ~1 logit off the unquantized model, so no *more* precise scorer can pass it.
+The bar now means "faithful to the model as published", and fp16 on the T4 passes it:
+faithful to 0.01 and top-6 ordered-identical 8/8. Changing a pre-set bar after the
+results was done openly and on evidence that does not depend on judgement — fp32
+itself fails the INT8 bar. Considered and not taken: a one-off waiver for the GPU
+while keeping the INT8 bar (leaves the next A/B facing the same broken rule), and
+blocking on human labels of the disputed chunks (worth doing later, not needed for
+the hardware decision).
 
 - **Speed:** 0.54 s/query plain, **0.29 s bucketed**, against 14.2 s — 26-47x. The
   host note's reading table puts this squarely in "≲ 1 s: the GPU path wins outright".

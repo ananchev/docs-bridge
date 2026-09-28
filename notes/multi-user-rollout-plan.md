@@ -157,15 +157,16 @@ queueing arithmetic stops being a design input at all.
 `gate1-runbook.md` + `gate1/`.** C = 6 (host-specific), baseline 14.2 s/query, both
 cheap alternatives in §3 rejected, and **§2.3: a T4 in fp16 reranks in 0.54 s (26x),
 0.29 s length-bucketed at 8 (47x)**, faithful to the unquantized model to 0.01 and
-8/8 top-6. **Recommended decision: GPU** — pending sign-off on one change to the bar
-below: its INT8 reference is itself up to 1.03 logits from fp32 (top-6 ordered-
+8/8 top-6. **DECIDED 2026-09-28: GPU**, and the bar below **switched its reference
+from CPU-INT8 to fp32**: the INT8 reference is itself up to 1.03 logits from fp32 (top-6 ordered-
 identical on only 2/8), so fp32 fails it exactly as fp16 does; the reference must
 become **fp32**, and the oracle a *fixed* fp32 judge — as specified it grades each
 scorer against its own deep top-6, which labels every set change a regression.
 
 - **C measured**, with the seconds-vs-threads curve recorded in this file.
-- **GPU latency measured** on real pairs, and ranking compared to the CPU-INT8
-  baseline using the established bar: top-3 ordered-identical, top-6 Jaccard ≥ 0.83.
+- **GPU latency measured** on real pairs, and ranking compared to the **fp32
+  reference** (originally the CPU-INT8 baseline — superseded, see status) using the
+  established bar: top-3 ordered-identical, top-6 Jaccard ≥ 0.83.
   fp16 is strictly more precise than INT8, so a *difference* is acceptable where it is
   an improvement — adjudicate with the reranker-as-oracle method from
   `validate_union.py` (score a deeper pool to define the global-best top-6, then ask
@@ -307,9 +308,12 @@ fixture plus the live collection:
 2. CPU INT8, new toolchain
 3. GPU fp16, new toolchain (GPU path only)
 
-Bar: top-3 ordered-identical and top-6 Jaccard ≥ 0.83 against the baseline, with
-disagreements adjudicated by the deeper-pool oracle (§2.4) rather than assumed to be
-regressions.
+Bar: top-3 ordered-identical and top-6 Jaccard ≥ 0.83 against the **fp32 reference**
+(`notes/gate1/gpu-fp32.json`, decided 2026-09-28 — §2.4 status), with disagreements
+adjudicated by a **fixed fp32 judge** over the deeper pool, not by each scorer's own
+deep top-6 (circular when the judge changes). Rows 1-2 (CPU INT8) are therefore
+measured *against* fp32 too; today INT8 sits up to 1.03 logits from it, which is the
+number any new INT8 or static-quantized export has to not make worse.
 
 ### 5.3 First-stage sanity (advisory)
 
@@ -425,7 +429,7 @@ health-check target; `/mcp` stays streamable HTTP with a bearer header.
 2. **Gate 1** on today's image: thread-scaling (§2.1), fixture dump (§2.2), GPU probe
    (§2.3) and the smaller-reranker probe (§3) in parallel. **Decide the hardware.**
    — *§2.1, §2.2, §3 DONE 2026-09-26; §2.3 DONE 2026-09-28 on a T4: 0.29-0.54 s vs
-   14.2 s. Recommended: GPU, pending sign-off on the fp32 reference (§2.4).*
+   14.2 s. DECIDED: GPU; quality bar re-referenced to fp32 (§2.4).*
 3. **The upgrade** (§4) on this branch: pins, Tier 1+2 enrichment, the `parse.py:83`
    comment fix, the §4.2 invariant recorded.
 4. **Gate 2** (§5): embed determinism, reranker A/B, first-stage sanity, cost refresh
