@@ -125,10 +125,82 @@ Same fixture, same §2.4 bar (top-3 ordered-identical, top-6 Jaccard ≥ 0.83), 
 disagreements adjudicated by the deeper-pool oracle instead of being assumed to be
 regressions.
 
-## Step 5 — §2.3 the GPU probe (deferred)
+## Step 5 — §2.3 the GPU probe (~30 min, T4)
 
-Blocked on a GPU host, not on this repo. The probe and the full host spec are in
-`gate1-gpu-probe-host.md`; it consumes the step 1 fixture and nothing else.
+Host spec and rationale: `gate1-gpu-probe-host.md`. The host is **transient** — it
+can be recreated at any moment, so everything it produces comes back into
+`notes/gate1/` and nothing is kept on it. It consumes the step 1 fixture and
+`tools/eval/rerank_ab.py`, nothing else.
+
+**Host as provisioned (2026-09-28):** `g4dn.xlarge` (Tesla T4 15 GB, 4 vCPU, 15 GiB),
+eu-central-1, AMI *Deep Learning OSS Nvidia Driver AMI GPU PyTorch 2.12 (Ubuntu
+24.04)*: driver 595.91, torch 2.12.1+cu130, Python 3.13 in the **`/opt/pytorch`
+venv** (the system `python3` has no torch — always use `/opt/pytorch/bin/python`).
+Reached as `ssh bnl-docsbridge-dev-host`, which proxies over SSM and needs the
+**`remote-session`** AWS profile (the `default` IAM user lacks `ssm:StartSession`);
+the ssh config entry sets `AWS_PROFILE=remote-session` in its `ProxyCommand`.
+
+### 5.1 — stage (from the workstation, repo root)
+
+The fixture is **not in git**; it lives on vhost2. `scp -3` relays it through the
+workstation. Copy the exact file — a regenerated fixture is a new baseline.
+
+```bash
+ssh bnl-docsbridge-dev-host 'mkdir -p ~/gate1/out'
+scp -3 vhost2:gate1/out/fixture.json bnl-docsbridge-dev-host:gate1/
+scp tools/eval/rerank_ab.py bnl-docsbridge-dev-host:gate1/
+```
+
+### 5.2 — set up (on the host)
+
+```bash
+ssh bnl-docsbridge-dev-host
+tmux new -s gate1          # an SSM drop must not kill a run; reattach: tmux a -t gate1
+cd ~/gate1
+PY=/opt/pytorch/bin/python
+sha256sum fixture.json     # MUST be 2fca6773e343641483b8480e0a14784f773fe4b8e11f6428fa7ed014dc4e3b81
+$PY -m pip install -q transformers
+{ date -u; nvidia-smi; sha256sum fixture.json
+  $PY -c "import sys,torch,transformers,tokenizers; print(sys.version); print('torch', torch.__version__, 'cuda', torch.version.cuda, torch.cuda.get_device_name(0)); print('transformers', transformers.__version__, 'tokenizers', tokenizers.__version__)"
+} 2>&1 | tee out/gpu-env.txt
+```
+
+### 5.3 — the runs (on the host, in tmux)
+
+Weights (~2.3 GB) download on first use; the harness loads the model *before* its
+warm-up and timing, so the download never lands in a measurement.
+
+```bash
+# runs 1-2: fp32 (the precision reference) then fp16 (the candidate)
+for p in fp32 fp16; do
+  $PY rerank_ab.py --fixture fixture.json --backend torch \
+      --model-id BAAI/bge-reranker-v2-m3 --device cuda --precision $p \
+      --repeats 10 --json out/gpu-$p.json 2>&1 | tee out/gpu-$p.txt
+done
+
+# runs 3-4: fp16 + length-bucketed sub-batches (why: gate1-findings-explained.md, test 5)
+for b in 4 8; do
+  $PY rerank_ab.py --fixture fixture.json --backend torch \
+      --model-id BAAI/bge-reranker-v2-m3 --device cuda --precision fp16 \
+      --bucket $b --repeats 10 --json out/gpu-fp16-bucket$b.json 2>&1 \
+      | tee out/gpu-fp16-bucket$b.txt
+done
+```
+
+**No bf16 run on the T4** — Turing has no bf16; it would fall back and mislead. It
+belongs to a second-point instance (L4/A10G), if one is taken.
+
+A run exits non-zero on `VERDICT: FAIL`; the loops carry on regardless, which is what
+we want — a failing verdict is a result, not an error.
+
+### 5.4 — bring everything back (from the workstation, repo root)
+
+```bash
+scp 'bnl-docsbridge-dev-host:gate1/out/*' notes/gate1/
+```
+
+Expect nine files: `gpu-env.txt` plus a `.json` and `.txt` per run. Then the instance
+holds nothing of value and can be terminated or recycled.
 
 ---
 
@@ -260,32 +332,132 @@ into a free one. That needs its own A/B against the baseline (static vs dynamic 
 itself a numerics change) and the §2.2 fixture is already a ready-made calibration
 set. **Recorded as a Gate 2 candidate, not done here.**
 
-## §2.3 — GPU: not yet run
+## §2.3 — GPU: T4 is 26x faster; the "FAIL" is the reference, not the GPU
 
-No host yet; quota granted. Spec and probe in `gate1-gpu-probe-host.md`.
+Measured 2026-09-28 on `g4dn.xlarge` (Tesla T4, eu-central-1), torch 2.12.1+cu130,
+transformers 5.17.0, fixture sha256 `2fca6773…3b81` (the recorded baseline, not a
+regeneration). Logs + JSON: `gate1/gpu-*.{txt,json}`, environment `gate1/gpu-env.txt`.
 
-Gate 1's outcome makes this the **only remaining candidate for a large win**, and
-notably the only one that does not trade quality away: both rejected levers failed by
-perturbing INT8 numerics, whereas fp16 strictly *reduces* numerical error relative to
-INT8. The ranking bar should therefore be easier for the GPU to clear, not harder —
-and the fp32-first run exists to prove exactly that.
+### Speed
+
+| run | s/query `top_n=40` | ms/pair | vs CPU-INT8 | `multi_top_n=60` |
+|---|---|---|---|---|
+| CPU INT8 (vhost2, baseline) | 14.17 | 354 | 1.0x | ~21 |
+| T4 fp32 | 2.80 | 70.0 | 5.2x | 4.20 |
+| **T4 fp16** | **0.54** | **13.5** | **26x** | **0.81** |
+| T4 fp16 + bucket 4 | 0.33 | 8.2 | 44x | 0.49 |
+| **T4 fp16 + bucket 8** | **0.29** | **7.3** | **47x** | **0.44** |
+
+The plan projected ~0.5 s for a T4; measured 0.54 s. fp32 → fp16 is 5.2x, which is
+the T4's tensor cores (fp16 only on Turing). Timing is end to end per query:
+tokenize, host→device copy, forward, sync.
+
+**Bucketing pays on the GPU too — my pre-run guess that it might not was wrong.**
+40 pairs padded to ~500 tokens is ~20k token-positions, which *is* enough to fill a
+T4, so cutting padding still converts into speed: 1.86x at bucket 8. Bucket 4 is
+slower than 8 because 10 sequential launches start to cost more than the extra
+padding saves. (Both include the harness's double tokenization; production would
+tokenize once.)
+
+### Quality: the harness says FAIL, and the reason is the reference
+
+All four GPU runs print the **same** `VERDICT: FAIL` — top-3 differs on email and
+TC_transfer_area, Jaccard 0.71/0.71/0.50 on three queries, "oracle-confirmed
+regression" on three. **fp32 fails identically to fp16.** fp32 is the model *as
+published*, with no quantization at all, so a bar it cannot pass is not measuring the
+GPU. It is measuring how far production's INT8 sits from the real model.
+
+Pair-by-pair score deltas (from the now-kept `scores`; baseline from the fixture):
+
+| comparison | max \|Δ\| | median \|Δ\| | top-6 ordered-identical | top-6 same set |
+|---|---|---|---|---|
+| **INT8 (production) vs fp32** — what INT8 costs | **1.031** | 0.181 | **2/8** | 5/8 |
+| fp32 vs fp16 — what fp16 costs | 0.0095 | 0.0017 | **8/8** | 8/8 |
+| fp16 vs fp16 + bucket 8 | 0.0156 | 0.0000 | **8/8** | 8/8 |
+| fp16 vs fp16 + bucket 4 | 0.0117 | 0.0010 | 7/8 * | 8/8 |
+
+\* the one "miss" is chunks #2 and #5 on the email query swapping places at 0.002
+apart — and they are **byte-identical texts** (same md5). The LLM receives the same
+six texts either way.
+
+So **fp16 is the published model to ~0.01**, and **production INT8 is ~100x further
+from it** (up to 1.03 logits). The GPU does not perturb rankings; it *un-perturbs*
+them.
+
+**The oracle is circular when the judge itself changes.** It defines "gold" as each
+scorer's own top-6 over the deep pool, so each scorer always recalls its own gold at
+1.00, and the accept rule (candidate ≥ baseline on *both* golds) reduces to "top-6
+set unchanged". Every set change is therefore labelled a regression — see the three
+flagged queries: each is an exact mirror (0.83 vs 1.00 / 1.00 vs 0.83). The method
+is sound where it came from (`validate_union.py`, fixed judge, changing retrieval);
+it cannot adjudicate between two *judges*. **This also weakens the
+"oracle-confirmed" wording in §3** — see below.
+
+**Reading the disputed chunks directly** (the only independent check available
+without human labels), INT8 vs fp32 is a wash, not a verdict either way:
+
+- **TC_transfer_area** — the top 18 candidates score within 0.45 of each other
+  (+3.37…+3.81), so the top-6 cut is close to arbitrary under either numerics. fp32
+  keeps `'Site preference.'` (a 16-character heading fragment) at rank 6 and drops
+  the actual answer (`TC_transfer_area=/tmp …`, "Valid Values") to rank 17, **0.04
+  below the cut**. INT8 happens to keep it. Chance at a near-tie, in INT8's favour.
+- **SAP basic unit of measure / SAP BOM origin** — the swaps are at ranks 5-7 with
+  scores between −0.6 and +0.0, i.e. chunks the model already says are *not* answers
+  (both sides are `ums_import_unit_definitions` examples; both BOM chunks are
+  tangential). A tie.
+- **BOM data in AIG, email, EPM** — reorders inside an unchanged top-6 set; email's
+  are among byte-identical duplicates.
+- **Control** — sourdough scores **−6.09** on the GPU vs −5.60 on INT8: the abstention
+  margin gets *wider*, not narrower.
+
+### Bucketing vs its pre-set bar (`gate1-findings-explained.md` test 5)
+
+Bar, set before the run: top-6 ordered-identical to unbucketed fp16 on 8/8 **and**
+max |Δ| ≤ 0.05.
+
+- **bucket 8: PASS** — 8/8, max 0.0156.
+- **bucket 4: formally 7/8, max 0.0117** — the single miss is the byte-identical swap
+  above. Substantively inert; recorded as a miss on the letter of the bar.
+
+Bucketing's worst shift is **~90x smaller** in fp16 than under INT8 (0.016 vs 1.41).
+That confirms test 4's diagnosis — the damage was INT8's per-batch calibration, not
+padding or masking — and so backs the Gate 2 static-quantization idea.
 
 ## Decision
 
-**Deferred, pending §2.3 — and that is the correct outcome, not an incomplete one.**
-Gate 1's job was to stop anyone sizing a fleet or rebuilding an image on guesses,
-and it has:
+**Recommended: the GPU path (T4-class, x86_64, fp16, length-bucketed at 8) —
+pending sign-off on one reinterpretation, stated plainly:** the §2.4 bar was set with
+the CPU-INT8 ranking as the reference; this run shows that reference is itself ~1
+logit off the unquantized model, so no *more* precise scorer can pass it. Judged
+against the model as published (fp32), fp16 on the T4 is faithful to 0.01 and 8/8.
 
-- The real cost of a search is **14.2 s**, not 11 s.
-- **A CPU pool is the fallback, and it is expensive.** At 14.2 s and C≈6 (host-
-  specific), a 16-vCPU box sustains ~2 concurrent searches — ~500/hour.
-- **Neither cheap lever survives contact with the quality bar.** A 3.3x smaller
-  model and a 2.9x batching change both lose answers; §0.1's "fewer/shorter pairs or
-  a smaller model" options are now measured and closed.
-- **One free win is in hand regardless:** set `rerank.threads` (≈14% on vhost2).
-- **One new lever was found and priced:** static quantization, which would unlock
-  bucketing's 2.86x for free if it holds up.
+- **Speed:** 0.54 s/query plain, **0.29 s bucketed**, against 14.2 s — 26-47x. The
+  host note's reading table puts this squarely in "≲ 1 s: the GPU path wins outright".
+  Serially one T4 reranks ~6,700 searches/hour (fp16) or ~12,000 (bucket 8), against
+  ~500/hour for a 16-vCPU CPU box (14.2 s/search, ~2 concurrent at C≈6 — Gate 1's priced
+  CPU fallback). Rerank only — embed (CPU,
+  ~0.13 s) and Qdrant are on top, and concurrency on one GPU was not measured.
+- **Quality:** no evidence of harm, and a wider abstention margin. The INT8 vs fp32
+  disagreements are boundary noise between near-equal chunks.
+- **Second instance (L4/A10G): not needed to decide.** The T4 already clears
+  sub-second with margin; an L4 would only add a price/performance slope, which
+  matters for §7 sizing, not for the CPU-vs-GPU question.
+- **Still to validate in §6.3 packaging:** this was torch; production will likely run
+  ONNX Runtime's CUDA provider (or torch) in an image — re-run this same fixture on
+  that build, judged against **fp32**, not INT8.
 
-So the hardware question now rests entirely on the GPU number, exactly as §2.3
-framed it — but with the CPU fallback's price, and the cheap alternatives'
-failure, both measured rather than assumed.
+**What this changes elsewhere.**
+
+- **§3's "oracle-confirmed regressions" were produced by the same circular oracle**
+  and should be read as "the top-6 set changed", not "got worse". `bge-reranker-base`
+  stays rejected on its other evidence (top-3 changed on 7/7, a disjoint top-6 on
+  TC_transfer_area, control margin −3.86 vs −5.60) — but that is now a judgement, not
+  a confirmed regression. INT8 bucketing is moot on the GPU path; on the CPU path it
+  should be re-judged against fp32 alongside static quantization (Gate 2).
+- **The A/B harness needs an fp32 reference.** `rerank_ab.py` should accept a
+  previous run's JSON (e.g. `gpu-fp32.json`) as the reference instead of the
+  fixture's INT8 column, and the oracle should adjudicate with a *fixed third judge*
+  (fp32) rather than each scorer's own view. Plan §5.2's bar needs the same change.
+- **Chunking (Gate 2 input):** a 16-character heading fragment (`'Site preference.'`)
+  scores +3.55 and can take a top-6 slot. That is a chunker problem, not a reranker
+  one.

@@ -1,0 +1,59 @@
+/opt/pytorch/lib/python3.13/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/393 [00:00<?, ?it/s]Loading weights: 100%|██████████| 393/393 [00:00<00:00, 3970.04it/s]
+
+rerank A/B | fixture=fixture.json
+  baseline:  onnx-cpu-int8 (BAAI/bge-reranker-v2-m3) on f6b1bd1e525a [aarch64, 10 cores], 354 ms/pair
+  candidate: torch fp16 on cuda [Tesla T4] (BAAI/bge-reranker-v2-m3)
+  top_n=40 k=6 max_length=512 oracle_pool=80 queries=8
+  bar: top-3 ordered-identical AND top-6 Jaccard >= 0.83
+
+  warm-up (8 pairs, includes any lazy init): 0.23 s
+
+query                                           s  ms/pr  spdup  top3  jacc  goldA  goldB    maxS
+-------------------------------------------------------------------------------------------------
+How do we read properties of a Teamcenter    0.51   12.8  27.0x   yes  1.00   1.00   1.00    4.12
+How to read BOM data from Teamcenter in A    0.59   14.8  24.8x   yes  1.00   1.00   1.00    4.20
+How to send an email from T4X?               0.52   13.1  25.7x    NO  1.00   1.00   1.00    2.62
+How does SAP distinguish if a BOM line wa    0.58   14.4  24.9x   yes  0.71   0.83   1.00    6.43
+How do we update basic unit of measure in    0.54   13.5  26.0x   yes  0.71   0.80   1.00    2.59
+TC_transfer_area site preference             0.61   15.4  27.0x    NO  0.50   0.67   1.00    3.81
+EPM_attach_related_objects                   0.48   12.1  26.9x   yes  1.00   1.00   1.00    5.82
+how to bake sourdough bread                  0.51   12.6  26.4x   yes  1.00   1.00   1.00   -6.09
+
+speed: 13.5 ms/pair median (26.0x the baseline's 354 ms/pair)
+       => 0.54 s per search at top_n=40, 0.81 s at multi_top_n=60
+
+DIFFERS from baseline on 4/7 queries — adjudicating with the deep-pool oracle:
+
+  How to send an email from T4X?
+    top-3 identical: False  jaccard: 1.00
+    gold (baseline's deep top-6, 4 of which are in the reranked 40): candidate recalls 1.00 vs baseline 1.00
+    gold (candidate's deep top-6, 4 in the reranked set): candidate recalls 1.00 vs baseline 1.00
+    -> IMPROVEMENT or tie (accept)
+
+  How does SAP distinguish if a BOM line was created in SAP or via an ex
+    top-3 identical: True  jaccard: 0.71
+    gold (baseline's deep top-6, 6 of which are in the reranked 40): candidate recalls 0.83 vs baseline 1.00
+    gold (candidate's deep top-6, 6 in the reranked set): candidate recalls 1.00 vs baseline 0.83
+    -> REGRESSION (reject)
+
+  How do we update basic unit of measure in SAP?
+    top-3 identical: True  jaccard: 0.71
+    gold (baseline's deep top-6, 5 of which are in the reranked 40): candidate recalls 0.80 vs baseline 1.00
+    gold (candidate's deep top-6, 5 in the reranked set): candidate recalls 1.00 vs baseline 0.80
+    -> REGRESSION (reject)
+
+  TC_transfer_area site preference
+    top-3 identical: False  jaccard: 0.50
+    gold (baseline's deep top-6, 6 of which are in the reranked 40): candidate recalls 0.67 vs baseline 1.00
+    gold (candidate's deep top-6, 6 in the reranked set): candidate recalls 1.00 vs baseline 0.67
+    -> REGRESSION (reject)
+
+VERDICT: FAIL
+  - oracle-confirmed regression on: How does SAP distinguish if a BOM line was created in SAP or
+  - oracle-confirmed regression on: How do we update basic unit of measure in SAP?
+  - oracle-confirmed regression on: TC_transfer_area site preference
+
+wrote out/gpu-fp16.json

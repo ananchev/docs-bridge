@@ -397,8 +397,10 @@ def main() -> int:
             "host": platform.node(), "machine": platform.machine(),
             "fixture_meta": meta, "verdict": verdict, "failures": fails,
             "median_ms_per_pair": med_ms, "median_speedup": med_speedup,
-            "queries": [{kk: vv for kk, vv in r.items() if kk != "scores"}
-                        for r in results],
+            # per-pair scores kept (8 x 40 floats) so two CANDIDATE runs can be
+            # diffed against each other, not only against the baseline column —
+            # e.g. fp16 bucketed vs fp16 unbucketed isolates what bucketing moved
+            "queries": results,
         }, open(args.json_out, "w"), indent=2)
         print(f"\nwrote {args.json_out}")
 

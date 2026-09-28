@@ -153,10 +153,15 @@ queueing arithmetic stops being a design input at all.
 
 ### 2.4 Exit criteria
 
-**Status (2026-09-26): §2.1, §2.2 and §3 done; §2.3 blocked on a host. Results,
-commands and raw logs in `gate1-runbook.md` + `gate1/`.** C = 6 (host-specific),
-baseline re-measured at 14.2 s/query, and **both cheap alternatives in §3 were
-REJECTED by the bar below** — so the hardware decision now rests on §2.3 alone.
+**Status (2026-09-28): all of Gate 1 measured. Results, commands and raw logs in
+`gate1-runbook.md` + `gate1/`.** C = 6 (host-specific), baseline 14.2 s/query, both
+cheap alternatives in §3 rejected, and **§2.3: a T4 in fp16 reranks in 0.54 s (26x),
+0.29 s length-bucketed at 8 (47x)**, faithful to the unquantized model to 0.01 and
+8/8 top-6. **Recommended decision: GPU** — pending sign-off on one change to the bar
+below: its INT8 reference is itself up to 1.03 logits from fp32 (top-6 ordered-
+identical on only 2/8), so fp32 fails it exactly as fp16 does; the reference must
+become **fp32**, and the oracle a *fixed* fp32 judge — as specified it grades each
+scorer against its own deep top-6, which labels every set change a regression.
 
 - **C measured**, with the seconds-vs-threads curve recorded in this file.
 - **GPU latency measured** on real pairs, and ranking compared to the CPU-INT8
@@ -184,7 +189,9 @@ cheaper one winning is the best outcome available.
 
 **Outcome (measured, `gate1-runbook.md`): both cheap levers lost.**
 `bge-reranker-base` is **3.3x faster (4.33 s/query) but fails** — top-3 identical on
-0 of 7 queries, Jaccard 0.00 on one, oracle-confirmed regressions on 4 of 7, and a
+0 of 7 queries, Jaccard 0.00 on one, "oracle-confirmed" regressions on 4 of 7 (the
+oracle turned out circular when the judge changes — §2.4 status; read as "top-6 set
+changed"), and a
 control margin that shrinks from −5.60 to −3.86. The `max_length` review came back
 **negative as a lever** (p50 = 100 tokens, only 1 pair in 320 reaches the 512 cap) —
 but it exposed a different one: the tokenizer pads to batch-longest, so 40 mixed-
@@ -417,8 +424,8 @@ health-check target; `/mcp` stays streamable HTTP with a bearer header.
 1. **Request the GPU quota** (other repo) — do this first; it gates §2.3 by days.
 2. **Gate 1** on today's image: thread-scaling (§2.1), fixture dump (§2.2), GPU probe
    (§2.3) and the smaller-reranker probe (§3) in parallel. **Decide the hardware.**
-   — *§2.1, §2.2, §3 DONE 2026-09-26 (`gate1-runbook.md`); §2.3 pending a host, and
-   it is now the only remaining candidate for a large win.*
+   — *§2.1, §2.2, §3 DONE 2026-09-26; §2.3 DONE 2026-09-28 on a T4: 0.29-0.54 s vs
+   14.2 s. Recommended: GPU, pending sign-off on the fp32 reference (§2.4).*
 3. **The upgrade** (§4) on this branch: pins, Tier 1+2 enrichment, the `parse.py:83`
    comment fix, the §4.2 invariant recorded.
 4. **Gate 2** (§5): embed determinism, reranker A/B, first-stage sanity, cost refresh

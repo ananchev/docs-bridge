@@ -1,5 +1,10 @@
 # Gate 1 §2.3 — the GPU probe host
 
+> **Run 2026-09-28 on a `g4dn.xlarge` (T4): fp16 0.54 s/query, 0.29 s bucketed at 8,
+> against 14.2 s on CPU.** Results and decision: `gate1-runbook.md` §2.3; plain
+> English: `gate1-findings-explained.md` test 5. The harness's FAIL verdict is an
+> artifact of the INT8 reference (fp32 fails it identically) — see there.
+
 What to launch, what to run on it, and what to bring back. Scoped to **one
 afternoon on one instance, then terminate it.** This is the cheapest possible test
 of the only question that matters at this stage: *is a GPU fast enough to make the
@@ -15,7 +20,7 @@ ingest, no EBS data volume, and no inbound port but SSH.** Two files are scp'd i
 
 | File | What it is | Size |
 |---|---|---|
-| `fixture.json` | Gate 1 §2.2 output: 8 real queries, their real RRF candidate passages, and the CPU-INT8 baseline scores | a few MB |
+| `fixture.json` | Gate 1 §2.2 output: 8 real queries, their real RRF candidate passages, and the CPU-INT8 baseline scores. **Not in git** — on vhost2 at `~/gate1/out/fixture.json` | 1.0 MB |
 | `tools/eval/rerank_ab.py` | the probe — standalone, imports only `torch` + `transformers` | 18 KB |
 
 That is the whole reason §2.2 exists before §2.3.
@@ -51,6 +56,12 @@ wheel):
   — driver + container toolkit, no torch, so add `pip install torch --index-url
   https://download.pytorch.org/whl/cu124` (~2.5 GB).
 
+**As actually provisioned (2026-09-28):** the Ubuntu 22.04 variant was not
+available, so the host runs **`Deep Learning OSS Nvidia Driver AMI GPU PyTorch 2.12
+(Ubuntu 24.04)`** — torch 2.12.1+cu130 on Python 3.13, in the `/opt/pytorch` venv
+(not on the system `python3`). The exact commands for this host are in
+`gate1-runbook.md` step 5, which supersedes the setup below.
+
 Resolve the current image id at launch rather than pinning one from this file:
 
 ```bash
@@ -76,10 +87,11 @@ pip install -q transformers            # the only missing dep
 nvidia-smi                             # confirm the driver sees the GPU
 ```
 
-Then from your workstation:
+Then from your workstation (the fixture comes from vhost2, not the repo):
 
 ```bash
-scp notes/gate1/fixture.json tools/eval/rerank_ab.py <gpu-host>:~/
+scp -3 vhost2:gate1/out/fixture.json <gpu-host>:
+scp tools/eval/rerank_ab.py <gpu-host>:
 ```
 
 ## The three runs
