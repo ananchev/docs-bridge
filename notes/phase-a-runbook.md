@@ -1,31 +1,63 @@
 # Phase A runbook — the toolchain upgrade, built and gated on vhost2
 
-> **Cold start — where this stands (2026-09-28).** All code for Phase A is on branch
-> `multi-user-rollout`: new pins + per-image locks, frozen models image, FlagEmbedding
-> removed, `parse.py` (speaker notes, alt-text, RapidOCR, Office format options), the
-> gate tools (`embed_upgrade_parity.py`, `retrieval_ab.py`) and the labelled question
-> set (`notes/gate2/questions-teamcenter.yaml`, 45 entries, labels **draft**). Both
-> Dockerfiles were test-built **rootless** on vhost2 with placeholder models and
-> smoke-tested (versions, zero CUDA packages, parse of a deck/DOCX/scanned PDF inside
-> the worker); both gate tools were tested against the live Qdrant with stub models.
-> **Not yet run: steps 0-8 below** (0b = the history check, added after asking whether
-> earlier worker rebuilds already drifted) — they need root podman (your sudo) and the real
-> models. Next after they pass: the operator-repo switch-over (end of this file), then
-> Gate 2 proper (`multi-user-rollout-plan.md` §5).
+> **Cold start — where this stands (2026-10-01).** Read this block, then jump to the
+> first step not marked done.
+>
+> **The plan (revised 2026-10-01 with the user).** The Mac mini moves to the new
+> toolchain by **re-embedding `teamcenter` into a side collection,
+> `teamcenter_after_ort130`**, with the new worker, while the old server keeps serving
+> the old collection. The new server is switched to the new collection only after the
+> gate (step 6) passes — no downtime, and the old collection plus the old images stay
+> as the rollback. In parallel, and independently, the EC2 image is built
+> (`multi-user-rollout-plan.md` §8 — no EC2 collection before its open decisions are
+> settled). EC2 never reuses anything from the Mac mini.
+>
+> **Order:** 0 ✔ → 0b ✔ → 1 ✔ → 2 ✔ → 3 ✔ → 4 ✔ (diagnostic) → **5 → R (re-embed,
+> overnight; 8 runs alongside) → 6 (the gate) → 7 → switch-over.**
+>
+> **Why the re-embed (history).** Step 4 (2026-09-29): same model bytes, 445/445
+> identical tokens, but onnxruntime 1.20.1 → 1.30.0 moves the dynamic-INT8 vectors to
+> cosine mean 0.987 / min 0.979 (bar ≥ 0.999) — the INT8 kernels changed. The new
+> runtime is exactly as far from the stored vectors as the old one (0.982060 vs
+> 0.982061), so querying the old collection with the new runtime would probably have
+> worked; but re-embedding makes the collection and its query runtime one consistent
+> pair, replaces the June vectors made by builds that no longer exist (0b.1: every image
+> still on the host, oldest 2026-07-02, carries bge-m3 `68086607db73f9c3`; the June
+> builds are gone), and costs one night with no downtime. Re-embedding is the answer
+> *this once*, not the upgrade policy: `stack-upgrade-strategy.md` §7.
+>
+> **What exists.** Branch `multi-user-rollout`: new pins + per-image locks, frozen
+> models image (`localhost/docs-bridge-models:frozen-2026-09`, saved as a tar next to
+> the Qdrant snapshots), FlagEmbedding removed, `parse.py` (speaker notes, alt-text,
+> RapidOCR, Office format options), the tools (`embed_upgrade_parity.py`,
+> `retrieval_ab.py`, `reembed_to_collection.py`) and the question set
+> (`notes/gate2/questions-teamcenter.yaml`, 45 entries; the user is verifying the labels,
+> step 8). The new images `localhost/{docs-bridge,ingest-worker}:2026.09-phase-a` are
+> built on vhost2 (step 3). Results land in `~/phase-a/out/` on vhost2 and come back to
+> `notes/phase-a/`.
+>
+> **Open things to watch.** RAM while the re-embed runs and after (step R.4 logs it —
+> the host has 16 GB: live server ~4.4 GB, worker ~4.8 GB, and Qdrant now holds two
+> copies of `teamcenter`); disk is not a concern. The Mac mini images must come from
+> the commit noted in step 0, never from a later commit of the branch, which will carry
+> the EC2 work (switch-over, item 3).
 
 Executes `multi-user-rollout-plan.md` §4 under decision **A** (2026-09-28): upgrade
 everything on vhost2 — one new ingest-worker for both corpora, one new server image
-for the Mac mini — **gated on embed parity against the 137k stored `teamcenter`
-vectors**. Nothing here touches the running stack: every image gets a new tag,
-`:latest` is never retagged, the ingest timer keeps using the old worker, and the
-live server keeps serving. The switch-over is the operator repo's, after the gates
+for the Mac mini. Since 2026-10-01 the Mac mini gets a re-embedded `teamcenter`
+(step R) and the gate is retrieval, old image + old collection vs new image + new
+collection (step 6); step 4 is the diagnostic (status above). Nothing here touches the
+running stack: every image gets a new tag, `:latest` is never retagged, the live server
+keeps serving the old collection, and the old collection is only ever read. The one
+change to the running host is that the ingest timer is **paused** from step R until
+the switch-over, so the old collection stops changing while it is copied. The switch-over is the operator repo's, after the gates
 (last section).
 
 What changed in the repo, and why it matters for these steps:
 
 | Change | Consequence here |
 |---|---|
-| docling 2.15.1 → 2.130.0; onnxruntime 1.20.1 → 1.30.0; tokenizers 0.19.1 → 0.23.2; numpy 1.26 → 2.4.6; torch 2.5.1 → 2.14.0+cpu | the embedder **runtime** changes under stored vectors → step 4 is blocking |
+| docling 2.15.1 → 2.130.0; onnxruntime 1.20.1 → 1.30.0; tokenizers 0.19.1 → 0.23.2; numpy 1.26 → 2.4.6; torch 2.5.1 → 2.14.0+cpu | the embedder **runtime** changes under stored vectors → step 4 measures it, step 6 decides |
 | **Models are no longer exported at build.** Both images copy them from `localhost/docs-bridge-models` | step 2 must run **before** anything replaces the deployed images; it takes the exact bytes out of them |
 | Full transitive **locks** per image (`images/lock.sh`) | builds never re-resolve; the embedder runtime is provably identical in both images |
 | FlagEmbedding backend removed | `embedding_backend: flagembedding` in a config now fails fast |
@@ -43,7 +75,12 @@ OLD_WORKER=localhost/ingest-worker:latest             # deployed; embedded teamc
 OLD_SERVER=docker.io/library/docs-bridge:latest       # deployed; note the namespace
 MODELS=localhost/docs-bridge-models:frozen-2026-09
 CFG=/data/docker/docs-bridge/config/config.yaml
+TC_NEW=teamcenter_after_ort130                        # step R's target collection
 ```
+
+These are plain shell variables: a new shell or a reconnect loses them, and an empty
+`$MODELS` turns `-t $MODELS .` into "tag `.`: invalid reference format". Keep the
+block in `~/phase-a/vars.sh` and `source` it after every login.
 
 ---
 
@@ -190,7 +227,15 @@ done 2>&1 | tee ~/phase-a/out/03-new-images.txt
 rootless on vhost2 with placeholder models on 2026-09-28: server ~0.5 GB, worker
 ~2.1 GB before the ~0.6 GB model.)
 
-## Step 4 — THE GATE: embed parity against the stored vectors (~10 min)
+## Step 4 — embed parity against the stored vectors: the diagnostic (~10 min)
+
+> **Ran 2026-09-29: `VERDICT: FAIL` on bar 3 only, and no longer blocking.** Bars 1, 2
+> and 4 pass (same model, same tokens, no new drift vs the stored vectors); bar 3
+> (old vs new ≥ 0.999) fails at 0.979 — the onnxruntime 1.30 INT8 kernels, not the
+> tokenizer. Bar 3 is stricter than the noise the collection already holds (the old
+> runtime itself reproduces stored vectors at 0.982), so it cannot be the gate; step 6
+> is. Read this step's output as the *why* when step 6 disagrees. The original text
+> follows unchanged.
 
 Three dumps of the same 400 `teamcenter` chunks + the 45 questions: the **old worker**
 (the runtime that made the stored vectors) and **both** new images (the new ingest
@@ -218,16 +263,16 @@ for side in worker server; do
 done
 ```
 
-**Both must print `VERDICT: PASS`.** The bar is in the tool's docstring: same model
+**Both must print `VERDICT: PASS`** *(original bar — see the note at the top of this step).* The bar is in the tool's docstring: same model
 bytes; old-vs-new dense cosine ≥ 0.999 for every text and sparse Jaccard ≥ 0.95;
 and the new runtime no further from the stored vectors than the old runtime itself
 (re-embedding never reproduces a stored vector exactly — ingest ran in batches and
 INT8 scales depend on the batch — so the old runtime's own distance is the baseline).
 
-**If it fails, stop here.** Do not switch anything. Section 2 of the output
-(`SAME TOKENS`) usually says why. The fallbacks, in order: hold `tokenizers` at
-0.19.1 if the tokens moved; hold `onnxruntime` if only the vectors moved; or
-re-ingest `teamcenter` with the new image (option C, ~13 h overnight).
+~~**If it fails, stop here.**~~ Superseded 2026-09-29: a bar-3 failure with bars 1, 2
+and 4 passing goes on to step 6. Still stop here if bar 1 (model) or bar 4 (new drift
+vs stored) fails, or if the tokens moved (hold `tokenizers` at 0.19.1). The step-6
+fallbacks are listed there.
 
 ## Step 5 — the reranker's numerics, old vs new runtime (~8 min)
 
@@ -249,36 +294,181 @@ rab 05-rerank-vs-fp32 --reference /ref/gpu-fp32.json       # distance to the ref
 ```
 
 **Expect** the first to print `SELFTEST … FAITHFUL` (max |Δ| < 1e-3 against the
-scores the old runtime produced) — if so the second is a formality. The second
+scores the old runtime produced) — if so the second is a formality. *After step 4 it
+may not:* the reranker is dynamic INT8 on the same new kernels, so it can move the way
+the embedder did. Then the second run decides, and it is the meaningful one anyway. The second
 reports how far the INT8 reranker sits from fp32 on the new runtime; the bar (plan
 §5.2) is **no worse than on the old one**: max |Δ| ≤ 1.03, top-6 ordered-identical
 ≥ 2/8. `--threads 6` because C = 6 on this host (Gate 1).
 
-## Step 6 — end to end, old image vs new image on the same collection (~25 min)
+## Step R — re-embed `teamcenter` into `teamcenter_after_ort130` (overnight, ~13 h)
 
-The 45 questions through the real `Searcher`, once per image, **one at a time** (each
-holds ~4.4 GB; the live server holds another 4.4 GB of 16).
+The new worker re-embeds every chunk of the live collection into a new one:
+`tools/eval/reembed_to_collection.py` reads each point's text and payload, embeds
+with the frozen INT8 model on the new runtime, and upserts with the **same point id and
+payload**. No re-parse, no manifest, and the source collection is only read. The same
+point ids are what keep step 6 comparable chunk by chunk and the question labels valid.
+`--batch 64` matches the Mac mini's ingest batch, so the new vectors carry the same
+kind of batch effect the old ones do.
+
+**R.0 — baseline the source (2 min).** Whatever is wrong with the old collection is
+copied, so look first:
 
 ```bash
 cd ~/phase-a/src
-rab_run() {  # $1 image  $2 label
+sudo python3 tools/ingest/verify-corpus.py --subject teamcenter \
+  2>&1 | tee ~/phase-a/out/R0-verify-old.txt          # expect exit 0, no drifted docs
+curl -s localhost:6333/collections/teamcenter | python3 -c \
+  'import json,sys; r=json.load(sys.stdin)["result"]; print(r["status"], r["points_count"])' \
+  | tee ~/phase-a/out/R0-count-old.txt
+```
+
+If verify reports drift, repair it first (`reingest-docs.py`, with the old worker), or
+the new collection inherits the hole.
+
+**R.1 — probe (5 min).** Proves the tool on the new stack and measures its speed:
+
+```bash
+cd ~/phase-a/src
+sudo podman run --rm --network docs-bridge-net \
+  -v $CFG:/config/config.yaml:ro,z \
+  -v ~/phase-a/src/tools/eval/reembed_to_collection.py:/reembed.py:ro,z \
+  --entrypoint python localhost/ingest-worker:$NEW /reembed.py \
+  --config /config/config.yaml --source teamcenter --target $TC_NEW \
+  --model-dir /opt/bge-m3-onnx --int8 --batch 64 --fresh --limit 2000 \
+  2>&1 | tee ~/phase-a/out/R1-probe.txt
+```
+
+**Expect** a clean `DONE ~2000 chunks` and a s/chunk near 0.34 (the old runtime's
+figure). Multiply by the R.0 count for the full run's length; much slower → bring
+`R1-probe.txt` back before committing a night to it.
+
+**R.2 — pause the nightly ingest.** From here until the switch-over the old collection
+must not change, or the copy misses it:
+
+```bash
+systemctl list-timers --all | grep docs-bridge | tee ~/phase-a/out/R2-timer.txt
+sudo systemctl stop docs-bridge-ingest.timer
+systemctl is-active docs-bridge-ingest.service        # must not say "active" (a run in flight)
+```
+
+To undo (step 6 fails, or the plan is abandoned): `sudo systemctl start
+docs-bridge-ingest.timer` — the old worker resumes on the old collection as before.
+
+**R.3 — the full run, detached (overnight).** `-d` keeps it running if SSH drops;
+`--fresh` drops the probe's partial collection first. Live queries get slower while it
+runs (it competes for the same cores), so start it in the evening:
+
+```bash
+cd ~/phase-a/src
+sudo podman run -d --name reembed-tc --network docs-bridge-net \
+  -v $CFG:/config/config.yaml:ro,z \
+  -v ~/phase-a/src/tools/eval/reembed_to_collection.py:/reembed.py:ro,z \
+  --entrypoint python localhost/ingest-worker:$NEW /reembed.py \
+  --config /config/config.yaml --source teamcenter --target $TC_NEW \
+  --model-dir /opt/bge-m3-onnx --int8 --batch 64 --fresh
+sudo podman logs -f reembed-tc                        # Ctrl-C detaches; the run goes on
+```
+
+**R.4 — log RAM while it runs.** The host has 16 GB, and nobody has measured it with
+two copies of `teamcenter` in Qdrant plus a re-embed plus the live server. Start this
+right after R.3; it stops by itself when the re-embed container exits:
+
+```bash
+sudo -v
+sudo nohup sh -c 'while podman ps -q --filter name=reembed-tc | grep -q .; do
+  date; free -m | sed -n 2p
+  podman stats --no-stream --format "{{.Name}} {{.MemUsage}}"
+  sleep 600
+done' > ~/phase-a/out/R4-ram.txt 2>&1 &
+```
+
+In the morning: `available` in `free -m` should never have approached 0, and no
+container should have restarted (`sudo podman ps -a`). After the run, one more reading
+— the steady state the Mac mini lives with until the old collection is dropped:
+
+```bash
+{ date; free -m; sudo podman stats --no-stream; } >> ~/phase-a/out/R4-ram.txt
+```
+
+**A RAM problem here is the one finding that would change the plan** (e.g. drop the
+old collection sooner, keeping it as a snapshot instead of live).
+
+**R.5 — check the copy (5 min), after `DONE`:**
+
+```bash
+sudo podman logs reembed-tc 2>&1 | tail -3 | tee ~/phase-a/out/R5-done.txt
+sudo podman rm reembed-tc
+curl -s localhost:6333/collections/$TC_NEW | python3 -c \
+  'import json,sys; r=json.load(sys.stdin)["result"]; print(r["status"], r["points_count"])' \
+  | tee ~/phase-a/out/R5-count-new.txt
+cd ~/phase-a/src
+sudo python3 tools/ingest/verify-corpus.py --subject teamcenter --collection $TC_NEW \
+  2>&1 | tee ~/phase-a/out/R5-verify-new.txt
+```
+
+**Expect** `green` and the same `points_count` as R.0 (the tool skips points with
+empty text, so any shortfall must equal the number of those — verify names any doc
+that lost chunks), and verify exit 0. Wait for `green` before step 6: Qdrant indexes
+after the upload, and a search against a `yellow` collection measures the indexer.
+
+The timer stays paused until the switch-over.
+
+## Step 6 — THE GATE: old image + old collection vs new image + new collection (~25 min)
+
+**Run it after step R and step 8**, so it scores the collection you will switch to,
+against verified labels, once.
+
+The new image reads a copy of the live config with only `teamcenter`'s collection
+changed. It goes outside `~/phase-a/out`, because that directory comes back into the
+repo:
+
+```bash
+sudo podman run --rm -i -v $CFG:/in.yaml:ro,z --entrypoint python localhost/docs-bridge:$NEW - \
+  > ~/phase-a/config-after.yaml <<'PY'
+import yaml
+c = yaml.safe_load(open("/in.yaml"))
+hit = [s for s in c["subjects"] if s["name"] == "teamcenter"]
+assert len(hit) == 1, "expected exactly one teamcenter subject"
+hit[0]["collection"] = "teamcenter_after_ort130"
+print(yaml.safe_dump(c, sort_keys=False))
+PY
+grep -n 'teamcenter' ~/phase-a/config-after.yaml      # the subject now names the new collection
+```
+
+Then, **one image at a time** (each holds ~4.4 GB; the live server holds another):
+
+```bash
+cd ~/phase-a/src
+rab_run() {  # $1 image  $2 label  $3 config
   sudo podman run --rm -i --network docs-bridge-net \
-    -v $CFG:/config/config.yaml:ro,z -v ~/phase-a/out:/out:z \
+    -v $3:/config/config.yaml:ro,z -v ~/phase-a/out:/out:z \
     -v ~/phase-a/src/notes/gate2:/q:ro,z \
     --entrypoint python $1 - run --questions /q/questions-teamcenter.yaml \
     --subject teamcenter --label $2 --out /out/06-retrieval-$2.json \
     < tools/eval/retrieval_ab.py 2>&1 | tee ~/phase-a/out/06-retrieval-$2.txt
 }
-rab_run $OLD_SERVER old
-rab_run localhost/docs-bridge:$NEW new
+rab_run $OLD_SERVER                old $CFG
+rab_run localhost/docs-bridge:$NEW new ~/phase-a/config-after.yaml
 python3 tools/eval/retrieval_ab.py compare --old ~/phase-a/out/06-retrieval-old.json \
   --new ~/phase-a/out/06-retrieval-new.json --json ~/phase-a/out/06-compare.json \
   | tee ~/phase-a/out/06-compare.txt
+{ date; free -m; } >> ~/phase-a/out/R4-ram.txt        # RAM after a real query load on both
 ```
 
-**Expect `VERDICT: PASS`**: no question answered by the old image goes unanswered by
+The comparison is chunk-ID based, which is valid because step R kept the point ids.
+
+**Expect `VERDICT: PASS`**: no question answered by the old setup goes unanswered by
 the new one, and every control that abstained still abstains. hit@6 itself is the
-baseline for later, not a gate — and it is only as good as the labels (step 8).
+baseline for later, not a gate — and it is only as good as the labels (step 8). Also
+look at the top-k overlap it reports: a PASS with a large reshuffle is worth bringing
+back before switching.
+
+**If it FAILS, stop.** Nothing has been switched, so the only thing to undo is the
+paused timer (R.2). Bring `04-*`, `06-*` and `R*` back; the cause (labels, the
+re-embed, or the new runtime itself) is decided from them before any next attempt.
+Pinning onnxruntime 1.20.1 stays the last resort: it costs RapidOCR (docling's ONNX
+OCR extras need ≥ 1.24.1) and would tie the work-archive ingest to the pin too.
 
 ## Step 7 — smoke-ingest real files into a SCRATCH collection (~10 min)
 
@@ -332,7 +522,7 @@ PDF, and `0/0/0` on the re-run. The first run downloads docling's new layout mod
 into the scratch cache (a few hundred MB); the real cache fills the same way on the
 first nightly run after the switch.
 
-## Step 8 — verify the question labels (you, ~45 min, any time)
+## Step 8 — verify the question labels (you, ~45 min, alongside step R, BEFORE step 6)
 
 `notes/gate2/questions-teamcenter.yaml`: 42 questions + 3 controls, each label
 checked by script to match a real chunk (0 misses, 2026-09-28) — but drafted by me
@@ -348,21 +538,42 @@ rsync -a --exclude '*.tar' vhost2:phase-a/out/ notes/phase-a/     # from the rep
 
 ---
 
-## The switch-over (operator repo, after steps 4–7 pass)
+## The switch-over (operator repo, after steps 5–7 pass — step 6 is the gate)
 
 Not done here. What the operator repo (`applications/docs-bridge.yml`) must change,
-because the Dockerfiles now expect things the old build did not:
+because the Dockerfiles now expect things the old build did not, and because the
+Mac mini now serves a different collection:
 
 1. **The models image must exist on the host before any image build.** Load it from
    the step-2 tar (`podman load -i …`) on a fresh host; never rebuild it from images
    that are about to be replaced.
 2. **Tag fully qualified**: `localhost/docs-bridge:…` and `localhost/ingest-worker:…`
    — the server is currently under `docker.io/library/`.
-3. Build from the new source (this branch, once merged) — the build pulls the locked
-   wheels (network at build, as before) but **no longer pulls HF weights**.
-4. Point the ingest unit and the server at the new tags; restart the server.
-5. First nightly ingest after the switch downloads the new docling layout models into
-   `/data/docs-bridge-payload/cache`.
+3. **Build from the commit that passed the gates** — the one noted in step 0 (tag it,
+   e.g. `git tag macmini-phase-a <sha>`), **not** the tip of the branch: the branch
+   carries on with the EC2 work, and anything built from a later commit is untested on
+   the Mac mini. The build pulls the locked wheels (network at build, as before) but
+   **no longer pulls HF weights**. Simplest of all: re-use the step-3 images as they are.
+4. **The `teamcenter` subject's `collection` becomes `teamcenter_after_ort130`** in the
+   rendered `config.yaml` — for the server and the ingest unit alike (the subject name,
+   its `dir` and the manifest stay as they are; the manifest tracks documents, not
+   collections, and the copy has the same documents).
+5. **The restore path must know the new name.** Backups discover collections live, so
+   the new one is snapshotted without changes; but the deploy's "Recover collections"
+   step restores by the configured collection name — check it maps
+   `teamcenter_after_ort130` to its own snapshot before relying on a restore.
+6. Point the ingest unit and the server at the new tags; restart the server (seconds,
+   the only interruption). Then **re-start the timer** paused in R.2
+   (`sudo systemctl start docs-bridge-ingest.timer`), and check `systemctl is-enabled`
+   on it — in August it was active but not enabled, which a reboot silently undoes.
+7. First nightly ingest after the switch downloads the new docling layout models into
+   `/data/docs-bridge-payload/cache`, and writes into the new collection — check the
+   next morning that `sync` ran and `verify-corpus.py --collection
+   teamcenter_after_ort130` still exits 0.
 
-Rollback is re-pointing both at the old tags: the old images are untouched, and the
-collection was never modified by any step above (step 7 used its own collection).
+**Rollback:** the old config (old collection name), the old image tags, restart the
+server, timer on the old worker. The old images are untouched and the old collection
+was only ever read — **as long as it exists.** Keep it for a rollback window (a week or
+two of normal use), then take a final snapshot of it and drop it
+(`curl -X DELETE localhost:6333/collections/teamcenter`); that also gives the RAM back
+(R.4). Until then Qdrant carries both.

@@ -111,6 +111,23 @@ One codebase: the targets differ only in reranker runtime and config
 - **§5.1's cross-architecture check is blocking for EC2**: its corpus is embedded on
   aarch64 (vhost2) and queried on x86.
 
+**Update 2026-09-29 (user): the Mac mini's ingest and database are never reused on
+EC2 — EC2 gets its own ingest and its own collections.** Nothing embedded for
+`teamcenter` is ever served from EC2, and no EC2 decision is constrained by the Mac
+mini's stored vectors. Open: *where* EC2's corpus is embedded. If on EC2 itself (or any
+x86 host), the cross-architecture bullet above no longer applies; if still on vhost2,
+it stays blocking — and Phase A step 4 suggests it would fail a 0.999 bar the same way
+(dynamic-INT8 kernels differ between onnxruntime builds, and aarch64 vs x86 run
+different kernels).
+
+Also from Phase A (2026-09-29): an onnxruntime upgrade alone moved the INT8 embedder's
+vectors to cosine ~0.98 with identical model bytes and tokens, so "never in the
+embedder" above is not something a shared codebase guarantees — only a frozen runtime
+does. Re-embedding on every upgrade does not scale; the long-run policy (freeze the
+embedder as model + runtime behind its own service, fingerprint each collection, gate
+at the retrieval level, stable precision for new corpora) is
+`stack-upgrade-strategy.md` §7. Its consequences for EC2 are noted in §5.1 and §6.3.
+
 ---
 
 ## 2. Gate 1 — measure before building
@@ -341,6 +358,17 @@ so a GPU buys it nothing, and it is the one component whose numerics are baked i
 stored data. Keeping it on CPU means the GPU change has **zero** vector-parity
 surface.
 
+> **Reopened 2026-09-29.** The argument above is about query latency; Phase A showed
+> the bigger cost is *upgrades*: dynamic INT8 moves every vector when onnxruntime
+> changes (cos ~0.98), and its batch effect leaves ~0.98 of noise in the stored vectors,
+> so no vector-level bar can be tight. EC2's corpus does not exist yet and is served
+> from a GPU, so an fp16 (or fp32) embedder is cheap there — at ingest, where a GPU
+> turns the CPU's ~0.34 s/chunk into a fraction of it, and for any later re-embed.
+> Expected to be far less runtime-sensitive than INT8; to be measured, not assumed.
+> Proposed, not decided: `stack-upgrade-strategy.md` §7 (items 1, 2, 4). And the
+> 0.999 bar here should be read as the diagnostic, with retrieval on the work-archive
+> questions as the gate (§7 item 3).
+
 ### 5.2 Reranker A/B (blocking for the GPU path)
 
 ~~Modify `tools/eval/recall_topn.py`~~ — **dropped 2026-09-28**: reranker numerics are
@@ -420,6 +448,14 @@ sessions pin to one process and a round-robin pool breaks.
 | CUDA base image | **~1 day — the real work** | Prefer keeping `python:3.11-slim-bookworm` and pulling CUDA in as pip wheels (`nvidia-cudnn-cu12`, `nvidia-cublas-cu12`) with `LD_LIBRARY_PATH` set, rather than switching to `nvidia/cuda:*-ubuntu22.04` (which ships Python 3.10, not 3.11). The wheel route keeps every pin and the `deps`→`exporter`→`runtime` cache structure intact. ORT's CUDA major/cuDNN major must match or you get a silent CPU fallback rather than an error. |
 | x86_64 switch | ~half a day | Mechanical: the aarch64-only comments in both Dockerfiles, pins re-resolving on x86 (wheels exist). Two side benefits: the from-source `images/qdrant` build becomes unnecessary (4 K pages), and the M2 stops being the only builder — build in CI/on the instance and push to a registry, finally closing the "build once, distribute" item open since the Pi. |
 
+**Embedder as its own service (proposed 2026-09-29, `stack-upgrade-strategy.md` §7).**
+If adopted, EC2 gets a third image: the frozen embedding model plus its own pinned
+onnxruntime (CUDA provider if the embedder goes fp16 on GPU), serving both the ingest
+worker and the query server. The server and worker images then carry no embedder
+runtime at all and upgrade independently of the vectors; the collection records the
+embedder's fingerprint (model sha256 + runtime + precision), checked at startup.
+Cheapest to decide before EC2's first collection exists.
+
 **Architecture note (verified):** `onnxruntime-gpu` has **no aarch64 wheels below
 1.29.0** — the 1.20.x line is x86_64/Windows only. So a Graviton+GPU (g5g) target
 would force ORT nine minor versions forward on its own. **Go x86_64 for the GPU path.**
@@ -484,6 +520,42 @@ health-check target; `/mcp` stays streamable HTTP with a bearer header.
    test-built rootless on vhost2. Awaiting `notes/phase-a-runbook.md` steps 0-7 on the
    host — step 4 (embed parity vs stored `teamcenter`) is blocking — and the
    operator-repo switch-over.*
+   — *2026-10-01: steps 0-4 done on vhost2; step 4 failed its runtime bar
+   (onnxruntime 1.30 moves INT8 vectors, cos ~0.98). Revised with the user: the Mac
+   mini re-embeds `teamcenter` into `teamcenter_after_ort130` with the new worker
+   (runbook step R, overnight), gates on retrieval (step 6), then switches with no
+   downtime. From here the Mac mini and EC2 run as two independent tracks (3a, 3b).*
+
+   **3a. Mac mini** — the runbook, to the switch-over. Its images come from the
+   commit that passed the gates, never from a later commit of this branch.
+
+   **3b. EC2, in parallel** — build the image, but **create no EC2 collection until
+   these are settled**, in this order; image work is cheap to redo, a collection built
+   on the wrong embedder means paying for a re-embed:
+   1. *fp16 reranker on onnxruntime + CUDA.* Gate 1 measured fp16 with torch, not
+      onnxruntime; the fp16 export (§6.3) is unwritten and §5.2's comparison against
+      fp32 has not run on it. The reason EC2 exists — validate it first.
+   2. *No silent CPU fallback.* A CUDA/cuDNN mismatch makes onnxruntime run on CPU
+      without an error (§6.3): the server must check at startup that it got the CUDA
+      provider and refuse to start otherwise.
+   3. *The embedder* — precision (fp16/fp32 vs INT8, §5.1), the separate embedding
+      service and the per-collection fingerprint (`stack-upgrade-strategy.md` §7).
+      Cheap only before the first collection exists.
+   4. *Where EC2 ingests.* On x86 needs an amd64 worker lock (`images/lock.sh` locks
+      the worker for aarch64 only) and maybe a CUDA torch for docling; on vhost2 brings
+      back the aarch64-vs-x86 embed parity check (§1.1).
+   Also needed before EC2 serves anyone, though they do not block the image: a
+   labelled work-archive question set (the retrieval gate has nothing to run on
+   without it), the Gate 3 concurrency changes (§6.1), and the archive parse at scale
+   (runbook step 7, then the pilot library).
+
+   **What the two tracks share is the code, not data.** EC2's changes (new config keys,
+   fp16 export, the CUDA provider) land in the same `src/` the Mac mini image is built
+   from. Every new setting must therefore default to today's behaviour when absent —
+   e.g. no `rerank.device` in a config means CPU, no `rerank.precision` means INT8 —
+   so the Mac mini's existing `config.yaml` keeps working unchanged when it is next
+   rebuilt from a later commit. That is what §6.3's "one image still runs CPU-only"
+   means in practice.
 4. **Gate 2** (§5): embed determinism, reranker A/B, first-stage sanity, cost refresh
    off the pilot library.
 5. **Gate 3** (§6): the concurrency changes, the liveness test, pool statelessness;

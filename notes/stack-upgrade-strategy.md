@@ -117,6 +117,15 @@ spending ~27 h of archive ingest.
 chunks-as-queries overlap@10 against `teamcenter`. Only worth running if Gate A comes
 back below 1.0.
 
+> **Update 2026-09-29: Gate A failed, and is no longer the gate.** The premise "it
+> should pass trivially" was wrong: same model bytes, identical tokens, but onnxruntime
+> 1.20.1 → 1.30.0 moved the dynamic-INT8 vectors to cosine mean 0.987 / min 0.979.
+> The new runtime is, however, exactly as far from the stored vectors as the old one
+> (0.982060 vs 0.982061) — the collection already holds ~0.98 of INT8 batch noise, so a
+> 0.999 bar measures something production never had. Gate B (retrieval) becomes the
+> gate, run as runbook step 6 (`retrieval_ab.py`, labelled questions, old vs new image
+> on the same collection). Why, and what follows for the long run: §7.
+
 If Gate A fails, the fallback is to hold `tokenizers`/`onnxruntime` and take
 `docling-slim[standard]` without the ONNX extras — losing RapidOCR but keeping the
 upgrade. Decide that only if it happens.
@@ -190,7 +199,8 @@ Defer Tier 3 until Tier 1–2 are in and the pilot has measured real figure coun
    already flags as things to re-check on a bump.
 4. **Gate A.** Build the image, run `validate_embed_parity.py` against `teamcenter`
    (*now `embed_upgrade_parity.py`, runbook step 4*).
-   **Stop here if it fails.**
+   **Stop here if it fails.** *(2026-09-29: it failed on the runtime bar alone; the
+   stop moved to Gate B, runbook step 6 — see §3, §7.)*
 5. **Tier 1 + 2** — format options for DOCX/PPTX, alt-text, RapidOCR, fix the OCR
    comment at `parse.py:80`.
 6. **Smoke-test** on a handful of representative archive files (one deck with notes, one
@@ -206,3 +216,63 @@ Defer Tier 3 until Tier 1–2 are in and the pilot has measured real figure coun
   end for a benchmark delta that does not describe our corpus. Forward on docling.
 - **Re-ingesting `teamcenter`.** It works, it stays. Any future re-ingest is its own
   decision with its own ~13 h price tag (137,013 chunks × 0.342 s).
+
+---
+
+## 7. Upgrading without re-embedding — the long-run policy (2026-09-29)
+
+**The problem Phase A exposed.** Freezing the model bytes (`images/models/`) was
+necessary but not sufficient: the vectors depend on the model **and the runtime that
+executes it**. With dynamic INT8, activation scales are computed at run time by kernels
+that change between onnxruntime releases, so a runtime bump moves every vector about as
+far as the batch effect does. And the runtime was not ours to hold: docling's ONNX OCR
+extras demand `onnxruntime>=1.24.1`, so a *parse* upgrade reached the *embedder*.
+Re-embedding on every such upgrade does not scale — ~13 h for `teamcenter` today, more
+with every corpus and every year.
+
+**Decided with the user:** the Mac mini's ingest and database are never reused on the
+AWS GPU target. EC2 gets its own ingest and its own collections. So the two targets can
+take different answers below, and neither inherits the other's vectors.
+
+The policy, strongest lever first (proposed 2026-09-29; only 3 is adopted so far, for the
+Mac mini — the rest are design decisions still to take):
+
+1. **Freeze the embedder as a unit — model + runtime — behind its own boundary.** A
+   small embedding service in its own image (the frozen model and its own pinned
+   onnxruntime, nothing else), called by the worker at ingest and by the server at
+   query time. Docling, RapidOCR, torch and the rest then upgrade freely: none of them
+   can reach the vectors. An embedder upgrade becomes a rare, deliberate event with its
+   own gate, not a side effect of a dependency bump. Cost: one more container and a
+   local call per query (sub-millisecond next to the ~40 ms embed); what the lock work
+   already bought (identical runtime in both images) becomes structural — there is
+   only one runtime.
+2. **Stamp every collection with its embedder fingerprint** — model sha256 + runtime
+   name/version + precision — in the collection's metadata, written at creation and
+   checked by the server at startup. A mismatch is then a loud refusal, not silent
+   drift, and it says which collections a proposed upgrade would touch.
+3. **Gate runtime changes at the retrieval level; keep vector cosine as the
+   diagnostic.** The question that matters is whether the same questions retrieve the
+   same chunks (Gate B, `retrieval_ab.py`), with bar 4 of `embed_upgrade_parity.py`
+   ("no further from the stored vectors than the old runtime") as supporting
+   evidence. Most upgrades should then pass without a re-embed. This needs a labelled
+   question set per corpus — the work-archive set for EC2 is a prerequisite, not an
+   afterthought.
+4. **New corpora start on a numerically stable embedder.** On EC2 the GPU makes fp16
+   (or fp32) embedding cheap; without dynamic activation scales, runtime upgrades are
+   expected to move vectors far less than INT8 does — *expected, not measured: confirm
+   with `embed_upgrade_parity.py` on the first EC2 image upgrade*. It also removes the
+   batch effect from the stored vectors, so the parity bars become tight enough to mean
+   something. The Mac mini stays INT8 on CPU (user decision, plan §1.1).
+5. **Keep re-embedding cheap for when it is unavoidable.** Chunk text, ids and full
+   payload already live in Qdrant, so a re-embed never re-parses
+   (`tools/eval/reembed_to_collection.py`: same point ids, new collection, old one kept
+   as the rollback). On a GPU it is a fraction of the 13 h CPU figure. It stays the
+   last resort, not the upgrade procedure.
+
+**Where each target stands.** Mac mini (revised 2026-10-01): this once, it takes
+item 5 — `teamcenter` is re-embedded on the new runtime into `teamcenter_after_ort130`
+(runbook step R) and gated with item 3 (step 6), then switched with no downtime; it
+also replaces June vectors made by builds that no longer exist. Items 1-2 are worth
+retrofitting at its next server change, so the *next* upgrade does not need a re-embed. EC2: 1, 2 and 4
+are design inputs for its images (`multi-user-rollout-plan.md` §1.1, §5.1, §6.3), cheapest to adopt
+before its first collection exists.
