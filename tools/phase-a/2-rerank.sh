@@ -15,12 +15,16 @@ rab() {  # $1 output name  [$2...] extra args
     < tools/eval/rerank_ab.py > $OUT/$name.txt 2>&1
 }
 
-say "new runtime vs the scores the old runtime produced (~4 min)"
+say "new runtime vs the scores the old runtime produced (~4 min; reported, not gated)"
 rab 2-rerank-vs-old-int8 --selftest
-tail -5 $OUT/2-rerank-vs-old-int8.txt
-grep -q FAITHFUL $OUT/2-rerank-vs-old-int8.txt && ok "FAITHFUL" || bad "not FAITHFUL"
+grep -E 'SELFTEST' $OUT/2-rerank-vs-old-int8.txt
+echo "(two INT8 runtimes may differ from each other by more than either does from fp32)"
 
-say "distance to the fp32 reference model (~4 min, reported, judged by me)"
+say "both runtimes vs the fp32 reference (~4 min) — the gate"
 rab 2-rerank-vs-fp32 --reference /ref/gpu-fp32.json
-tail -8 $OUT/2-rerank-vs-fp32.txt
+grep -E '^speed' $OUT/2-rerank-vs-fp32.txt
+python3 $SRC/tools/phase-a/rerank_vs_fp32.py $HOME/gate1/out/fixture.json \
+  $SRC/notes/gate1/gpu-fp32.json $OUT/2-rerank-vs-fp32.json | tee $OUT/2-rerank-analysis.txt
+grep -q 'VERDICT: PASS' $OUT/2-rerank-analysis.txt \
+  && ok "new runtime ranks as close to fp32 as the old one" || bad "new runtime ranks further from fp32"
 finish "Next: ./3-smoke.sh"
