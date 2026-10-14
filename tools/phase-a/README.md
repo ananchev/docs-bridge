@@ -8,7 +8,7 @@ cd ~/phase-a/src/tools/phase-a
 ./1-build.sh            # ~10 min  build the new images, check models + versions
 ./2-rerank.sh           # ~8 min   reranker scores on the new runtime
 ./3-smoke.sh            # ~15 min  small scratch ingest; identity fix + stamps
-#   labels (runbook step 8) — on the workstation, then re-sync the source (below)
+#   labels: OPTIONAL — drafts are fine for this gate (runbook step 8)
 ./4-config.sh           # ~2 min   write the rebuild config, check the file counts
 ./5-start-rebuild.sh    # evening  pause timer, what's-new now, 2512 overnight (detached)
 ./6-check-rebuild.sh    # morning  is the rebuild complete and consistent?

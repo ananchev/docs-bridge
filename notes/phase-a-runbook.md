@@ -209,7 +209,18 @@ readable text from the teamcenter PDFs and the SOA page (look at a few chunks �
 is the first time docling 2.130 sees this corpus). The first run downloads docling's
 new layout models into the scratch cache (a few hundred MB).
 
-## Step 8 — verify the question labels (you, ~45 min, BEFORE step 6)
+## Step 8 — the question labels: OPTIONAL for this gate (2026-10-14)
+
+**Decided 2026-10-14 (user):** a full label review goes too deep for this gate, and
+it isn't needed. The gate is RELATIVE — old and new are scored against the same
+labels, so an imperfect label weighs on both sides alike — and each label was drafted
+from the chunk it points to, so its evidence exists by construction. Run the gate on
+the draft labels; I adjudicate every MISS by reading what both runs returned. Optional
+(5 min): skim the 45 question lines and set `status: drop` on any no Teamcenter user
+would ask (keep the three off-topic controls). The full review below belongs to
+Gate 2 proper, where hit@k is read as an absolute quality figure.
+
+### The full review (Gate 2 proper, not now)
 
 `notes/gate2/questions-teamcenter.yaml`: 42 questions + 3 controls, each label
 checked by script to match a real chunk (0 misses, 2026-09-28) — but drafted by me
