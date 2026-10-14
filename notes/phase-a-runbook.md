@@ -18,17 +18,21 @@
 > | `teamcenter-2512` | `teamcenter_2512` | `/data/docs/teamcenter-2512` | `Siemens/Teamcenter 2512/*`, flattened, minus its 3 What's New PDFs |
 > | `teamcenter-whats-new` | `teamcenter_whats_new` | `/data/docs/teamcenter-whats-new` | `Siemens/Teamcenter What's New/*` (14.3 … 2606) + the 2 Gateway What's New PDFs |
 > | `teamcenter-2606` | `teamcenter_2606` | `/data/docs/teamcenter-2606` | **later** (B.5), when the 2606 docs arrive |
-> | `sow` (+ `ecosys`, `polarion`) | `sow_docling130` (…) | unchanged | rebuilt as they are |
 >
 > The new dirs are **reflink copies** (btrfs, `cp --reflink=always`): no extra disk, and
 > the old `/data/docs/teamcenter` stays exactly as the old stack knows it, so rollback
 > needs no file moves. It is removed at the end of the rollback window.
 > `Teamcenter 2512/Whats New in Teamcenter 2512.pdf` is byte-identical to
-> `whats_new_tc_2512.pdf` and is not copied. The other subjects are rebuilt into
-> `<collection>_docling130` because a fresh manifest sees all their files as new and
-> the new point ids would not overwrite the old points — a sync into the old
-> collection would leave every chunk there twice. `ecosys` and `polarion` have no files
-> yet (nothing to build); `sow` is 33 files / 2.1k chunks.
+> `whats_new_tc_2512.pdf` and is not copied.
+>
+> **`sow`, `ecosys` and `polarion` are dropped for now (user, 2026-10-14):** not in the
+> new config, so after the switch-over the server does not offer them (`ecosys` and
+> `polarion` are empty anyway; `sow` is 33 files / 2.1k chunks). Their old collections
+> and the old manifest stay untouched. To bring one back later, add it to the config
+> with a **new** collection name (e.g. `sow_docling130`) and let the nightly sync
+> build it: the new manifest sees all its files as new, and the subject-qualified
+> point ids would not overwrite the old points, so syncing into the old collection
+> would leave every chunk there twice.
 >
 > Steps 0–3 were run on 2026-09-29 for the previous plan; the models image (step 2)
 > stands, the **images must be rebuilt** (step 3) because they predate the identity
@@ -275,9 +279,7 @@ import yaml
 c = yaml.safe_load(open("/in.yaml"))
 old = [s for s in c["subjects"] if s["name"] == "teamcenter"]
 assert len(old) == 1, "expected exactly one teamcenter subject"
-others = [s for s in c["subjects"] if s["name"] != "teamcenter"]
-for s in others:                                      # rebuilt into new collections too
-    s["collection"] += "_docling130"
+# sow, ecosys, polarion: dropped for now (see the top of this file)
 c["subjects"] = [
     {"name": "teamcenter-2512", "dir": "/data/docs/teamcenter-2512",
      "collection": "teamcenter_2512",
@@ -298,16 +300,14 @@ c["subjects"] = [
          "changed or removed a feature, and for upgrade planning; for how a feature "
          "works in detail, search that release's own documentation pool "
          "(e.g. teamcenter-2512).")},
-] + others
+]
 c["manifest_path"] = "/data/state/manifest-subject-keyed.sqlite"
 print(yaml.safe_dump(c, sort_keys=False, allow_unicode=True))
 EOF
 grep -nE 'name:|dir:|collection:|manifest_path' $NEW_CFG
 ```
 
-`others` are the remaining subjects (sow, ecosys, polarion): same names, dirs and
-descriptions, new collection names. They are not gated (the question set is
-teamcenter's); B.6 verifies them. Check the scan sees what B.1's copy laid out:
+Only the two Teamcenter subjects. Check the scan sees what B.1's copy laid out:
 
 ```bash
 sudo podman run --rm -v $P/docs:/data/docs:ro,z -v $NEW_CFG:/config/config.yaml:ro,z \
@@ -350,9 +350,6 @@ rebuild() {  # $1 subject
 }
 rebuild teamcenter-whats-new                          # small: doubles as the speed probe
 sudo podman logs -f rebuild-teamcenter-whats-new      # wait for its summary line
-for s in sow; do                                      # the small ones (ecosys, polarion: no files yet)
-  rebuild $s && sudo podman wait rebuild-$s && sudo podman logs rebuild-$s 2>&1 | tail -1
-done
 rebuild teamcenter-2512
 sudo podman logs -f rebuild-teamcenter-2512           # Ctrl-C detaches; the run goes on
 ```
@@ -412,7 +409,7 @@ a runbook step: the nightly timer picks up a new subject by itself.
 ### B.6 — check the rebuild (10 min), after both nights
 
 ```bash
-sudo podman rm rebuild-teamcenter-whats-new rebuild-sow rebuild-teamcenter-2512
+sudo podman rm rebuild-teamcenter-whats-new rebuild-teamcenter-2512
 cd ~/phase-a/src
 # every subject:collection pair of the new config
 PAIRS=$(sudo podman run --rm -v $NEW_CFG:/config/config.yaml:ro,z --entrypoint python \
@@ -540,14 +537,14 @@ Not done here. What `containers-at-home` (`applications/docs-bridge.yml`, the
    (`-e docs_bridge_ref=macmini-rebuild`; `prep.yml` defaults to the `mac-mini`
    branch tip). Simplest of all: re-use the step-3 images as they are.
 4. **The config contract:** `teamcenter-2512` and `teamcenter-whats-new` replace
-   `teamcenter` (names, dirs, collections, descriptions), the other subjects'
-   collections get their `_docling130` names, and `manifest_path` becomes
+   `teamcenter` (names, dirs, collections, descriptions), `sow`, `ecosys` and
+   `polarion` are removed from the contract for now, and `manifest_path` becomes
    `/data/state/manifest-subject-keyed.sqlite` — all exactly as in `$NEW_CFG`; diff the
    rendered config against it. The subjects' `dir`s must exist under the payload root
    (`prep.yml` creates missing ones, empty — harmless, B.1 already filled them).
 5. **The restore path must know the new names.** Backups discover collections live;
    the deploy's "Recover collections" step restores by configured name — check it maps
-   the three new collections and the new manifest file.
+   the two new collections and the new manifest file.
 6. Point the ingest unit and the server at the new tags; restart the server (seconds,
    the only interruption). Then **re-start the timer** paused in B.2
    (`sudo systemctl start docs-bridge-ingest.timer`) and check `systemctl is-enabled`
@@ -562,7 +559,7 @@ Not done here. What `containers-at-home` (`applications/docs-bridge.yml`, the
 
 **Rollback:** the old config (subject `teamcenter`, old manifest path), the old
 image tags, restart the server, re-start the timer on the old worker. The old images,
-the old manifest and the old collections (`teamcenter`, `aig`, `pq`) were never
+the old manifest and the old collections (`teamcenter`, `sow`) were never
 written by any step above — **as long as they exist.** Keep them for a rollback window
 (a week or two of normal use), then take a final snapshot of each, drop them (`curl -X
 DELETE localhost:6333/collections/<name>`) and archive the old manifest; that also
