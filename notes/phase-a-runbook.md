@@ -1,5 +1,9 @@
 # Phase A runbook — the Mac mini rebuild on the new toolchain (vhost2)
 
+> **To run it: use the step scripts in `tools/phase-a/` (see its README)** — one
+> command per step, each ending in "Step passed" or "Step FAILED". This file explains
+> what they do and why; the scripts are the source of truth for the commands.
+
 > **Cold start — where this stands (2026-10-14).** Branch **`mac-mini`** (the old
 > `main`, renamed 2026-10-14) is the Mac mini's line; `multi-user-rollout` carries the
 > EC2 work and later merges `mac-mini` for the shared fixes. `mac-mini` forked at
