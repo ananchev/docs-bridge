@@ -28,6 +28,11 @@ class EmbedderProto(Protocol):
     def encode(self, texts: list[str]) -> tuple[list[list[float]], list["SparseVec"]]:
         ...
 
+    @property
+    def fingerprint(self) -> dict:
+        """Identity of everything that decides the vectors (stamped per collection)."""
+        ...
+
 
 def get_embedder(cfg: "Config") -> EmbedderProto:
     """The configured embedder. ONNX is the only backend; the import is lazy so the

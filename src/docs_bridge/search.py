@@ -9,7 +9,8 @@ ONE retrieve->rerank path, shared by the MCP `search()` tool and the REST mirror
   2. hybrid retrieve from Qdrant: a dense-vector prefetch + a sparse-vector prefetch,
      fused server-side with Reciprocal Rank Fusion (design §12.4: dense+sparse in one
      model, not a separate BM25).
-  3. rerank the fused top_n with the cross-encoder (rerank.OnnxReranker), keep top-k.
+  3. rerank the fused top_n with the cross-encoder (rerank.OnnxReranker), keep top-k;
+     across several pools, identical passages fold into one result (_merge_identical).
   4. return chunks with citations (source_path, section, last_updated, scores).
 
 Models are loaded LAZILY and once (design §9: "loaded once, used across all subject
@@ -138,20 +139,47 @@ class Searcher:
         reranker = self.reranker
         if reranker is not None:
             texts = [(p.payload or {}).get("text", "") for p, _ in candidates]
-            scores = reranker.score(query, texts)
-            order = sorted(range(len(candidates)), key=lambda i: scores[i], reverse=True)
-            ranked = [(candidates[i][0], candidates[i][1], float(scores[i])) for i in order[:k]]
+            scores = [float(x) for x in reranker.score(query, texts)]
         else:
-            order = sorted(
-                range(len(candidates)),
-                key=lambda i: candidates[i][0].score or 0.0, reverse=True,
-            )
-            ranked = [
-                (candidates[i][0], candidates[i][1], float(candidates[i][0].score or 0.0))
-                for i in order[:k]
-            ]
+            scores = [float(p.score or 0.0) for p, _ in candidates]
+        order = sorted(range(len(candidates)), key=lambda i: scores[i], reverse=True)
+        ranked = [(candidates[i][0], candidates[i][1], scores[i]) for i in order]
 
-        return [self._to_result(p, subj, score) for p, subj, score in ranked]
+        if not multi:
+            return [self._to_result(p, subj, score) for p, subj, score in ranked[:k]]
+        return self._merge_identical(ranked, k)
+
+    @classmethod
+    def _merge_identical(cls, ranked: list, k: int) -> list[dict]:
+        """Top-k DISTINCT passages across pools. Versioned corpora (Teamcenter 2512 /
+        2606) share most of their text word for word, so without this a both-versions
+        search spends half of k on identical pairs. An identical passage (whitespace-
+        normalised) folds into the best-scored result: `subjects` lists every pool it
+        came from and `also_in` carries the other citations. Only candidates that
+        reached the reranker are seen, so a subject MISSING from `subjects` is not
+        evidence the text differs there — presence means same, absence means unknown."""
+        results: list[dict] = []
+        by_text: dict[str, dict] = {}
+        for p, subj, score in ranked:
+            pl = p.payload or {}
+            key = " ".join(pl.get("text", "").split())
+            hit = by_text.get(key)
+            if hit is not None:
+                if subj not in hit["subjects"]:
+                    hit["subjects"].append(subj)
+                hit["also_in"].append({
+                    "subject": subj,
+                    "source_path": pl.get("source_path"),
+                    "section": pl.get("section_path"),
+                    "doc_id": pl.get("doc_id"),
+                    "chunk_id": pl.get("chunk_id"),
+                })
+            elif len(results) < k:
+                hit = by_text[key] = cls._to_result(p, subj, score)
+                results.append(hit)
+            # else: a new passage past k — skipped, but keep scanning so the chosen
+            # results still collect their identical copies from the other pools.
+        return results
 
     def _resolve_subjects(self, subject: "str | list[str]") -> list:
         """Normalize the `subject` arg into a list of Subjects. Accepts a single name,
@@ -179,6 +207,8 @@ class Searcher:
         return {
             "score": score,
             "subject": subject,
+            "subjects": [subject],   # >1 when identical text came from several pools
+            "also_in": [],           # the other pools' citations for that same text
             "source_path": pl.get("source_path"),
             "section": pl.get("section_path"),
             "last_updated": pl.get("last_updated"),

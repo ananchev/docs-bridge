@@ -50,7 +50,10 @@ server:
   default_k: 6                        # search(..., k=6) (design §9)
   prefetch_limit: 50                  # dense / sparse candidates each before RRF fusion
 
-# N independent corpora; each its own dir + Qdrant collection (design §6).
+# N independent corpora; each its own Qdrant collection (design §6) — two subjects
+# may share a dir and split it with include/exclude, never a collection. Versions of
+# one product are separate subjects, e.g. teamcenter-2512 / teamcenter-2606, so a
+# caller picks one or passes both (identical passages then come back merged).
 # A subject may carry its own include/exclude (unioned with the global ones above) —
 # e.g. a doxygen tree dropped in as-is, with its navigation/index pages excluded:
 #   - name: teamcenter

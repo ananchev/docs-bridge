@@ -7,9 +7,11 @@ Collection layout (must match the docs-bridge query side):
   - payload index on `doc_id` (keyword) so doc-scoped deletes are cheap, and on
     `subject` for query-time filtering.
 
-Point ids are deterministic UUIDv5 of the human "{doc_id}:{chunk_index}" string,
-so re-ingesting a doc overwrites its points rather than duplicating them
-(idempotent upserts, design §8). The readable chunk_id is also kept in the payload.
+Point ids are deterministic UUIDv5 of "{subject}/{doc_id}:{chunk_index}", so
+re-ingesting a doc overwrites its points rather than duplicating them (idempotent
+upserts, design §8). The subject is in the id because a doc_id is only a path
+relative to its subject dir — two subjects with the same layout must never share
+an id. The readable chunk_id ("{doc_id}:{chunk_index}") is kept in the payload.
 """
 
 from __future__ import annotations
@@ -40,8 +42,8 @@ _UPSERT_MAX_ATTEMPTS = 8
 _UPSERT_BACKOFF_CAP = 60.0
 
 
-def point_id(chunk_id: str) -> str:
-    return str(uuid.uuid5(_NS, chunk_id))
+def point_id(subject: str, chunk_id: str) -> str:
+    return str(uuid.uuid5(_NS, f"{subject}/{chunk_id}"))
 
 
 def connect(cfg: Config) -> QdrantClient:
@@ -100,7 +102,7 @@ def upsert(
 ) -> None:
     points = [
         qm.PointStruct(
-            id=point_id(c.chunk_id),
+            id=point_id(c.subject, c.chunk_id),
             vector={
                 DENSE: d,
                 SPARSE: qm.SparseVector(indices=s.indices, values=s.values),

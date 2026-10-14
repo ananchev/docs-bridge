@@ -54,6 +54,9 @@ def _drain_staged(cfg: Config, subject: Subject, manifest: Manifest, client) -> 
     if not staged:
         return 0
     embedder = get_embedder(cfg)
+    # Before the first upsert: stamp the collection with this embedder, or refuse
+    # if it was filled by a different one (manifest.EmbedderMismatchError).
+    manifest.stamp_collection(subject.collection, subject.name, embedder.fingerprint)
     done = 0
     for batch in manifest.iter_staged_batches(subject.name, cfg.ingest.batch_size):
         dense, sparse = embedder.encode([c.text for c in batch])
@@ -130,7 +133,7 @@ def sync_subject(
         qdrant_io.delete_doc(client, subject.collection, doc_id)
     for doc_id in deleted:
         qdrant_io.delete_doc(client, subject.collection, doc_id)
-        manifest.delete_doc(doc_id)
+        manifest.delete_doc(subject.name, doc_id)
 
     stats.chunks_embedded += _drain_staged(cfg, subject, manifest, client)
     return stats

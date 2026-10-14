@@ -72,6 +72,13 @@ When a search spans multiple pools:
    comparable across pools, so the best chunks win regardless of which corpus they
    came from.
 4. Each returned chunk carries its `subject` so the caller knows where it came from.
+5. Passages whose text is identical (whitespace-normalised) in several pools come
+   back **once** (`Searcher._merge_identical`): the best-scored copy is the result,
+   `subjects` lists every pool it was found in, and `also_in` holds the other pools'
+   citations. Versioned corpora (Teamcenter 2512 / 2606) share most text word for
+   word; without this a both-versions search spends half of `k` on identical pairs.
+   Only candidates that reached the reranker are compared, so a pool *missing* from
+   `subjects` is not evidence that the text differs there.
 
 The candidate budget is `rerank.top_n` for a single pool and the larger
 `rerank.multi_top_n` when spanning pools (so cross-pool hits are not squeezed out).
@@ -86,16 +93,24 @@ Each result is a dict (`Searcher._to_result`):
 ```json
 {
   "score": 7.42,
-  "subject": "teamcenter",
+  "subject": "teamcenter-2512",
   "source_path": "/data/docs/teamcenter/install-guide.pdf",
   "section": "Installation > Prerequisites",
   "last_updated": "2026-05-01T12:00:00+00:00",
   "doc_id": "install-guide.pdf",
   "chunk_id": "install-guide.pdf:12",
   "snippet": "first 320 chars …",
-  "text": "the full chunk text"
+  "text": "the full chunk text",
+  "subjects": ["teamcenter-2512", "teamcenter-2606"],
+  "also_in": [
+    {"subject": "teamcenter-2606", "source_path": "…", "section": "…",
+     "doc_id": "install-guide.pdf", "chunk_id": "install-guide.pdf:12"}
+  ]
 }
 ```
+
+`subjects` is always present (`[subject]` for a single pool) and `also_in` is empty
+unless a multi-pool search merged identical text.
 
 `score` is the rerank logit (higher = more relevant), or the RRF score when
 reranking is off. `source_path`, `section`, and `last_updated` are the citation

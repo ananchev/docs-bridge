@@ -25,9 +25,11 @@ import torch or FlagEmbedding.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
+from functools import cached_property
 
 import numpy as np
 
@@ -58,6 +60,9 @@ class OnnxEmbedder:
 
         onnx_file = "model.int8.onnx" if use_int8 else "model.onnx"
         onnx_path = os.path.join(model_dir, onnx_file)
+        self._model_dir = model_dir
+        self._onnx_file = onnx_file
+        self._use_int8 = use_int8
         if not os.path.exists(onnx_path):
             raise FileNotFoundError(
                 f"{onnx_path} not found; run tools/export_bge_m3_onnx.py first "
@@ -92,6 +97,31 @@ class OnnxEmbedder:
             for t in ("<s>", "</s>", "<pad>", "<unk>")
         }
         self._special.discard(None)
+
+    @cached_property
+    def fingerprint(self) -> dict:
+        """What decides the vectors: the model bytes AND the runtime that runs them.
+        Phase A step 4 showed identical model bytes and tokens still move INT8 dense
+        vectors to cosine ~0.987 across onnxruntime 1.20 -> 1.30, so the runtime
+        version is part of the identity. Stamped per collection by the manifest.
+        Hashing reads ~0.6 GB, so it runs once, on first use (the ingest worker),
+        never on server startup."""
+        import onnxruntime as ort
+        import tokenizers
+
+        files = {}
+        for f in (self._onnx_file, "sparse_linear.npz", "tokenizer.json"):
+            h = hashlib.sha256()
+            with open(os.path.join(self._model_dir, f), "rb") as fh:
+                for block in iter(lambda: fh.read(1 << 20), b""):
+                    h.update(block)
+            files[f] = h.hexdigest()[:16]
+        return {
+            "files": files,
+            "int8": self._use_int8,
+            "onnxruntime": ort.__version__,
+            "tokenizers": tokenizers.__version__,
+        }
 
     def encode(self, texts: list[str]) -> tuple[list[list[float]], list[SparseVec]]:
         encs = self.tokenizer.encode_batch(texts)
