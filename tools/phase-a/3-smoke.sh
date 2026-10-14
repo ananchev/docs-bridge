@@ -8,7 +8,10 @@ set -uo pipefail
 S=$A/smoke
 
 say "picking sample files from teamcenter-2512 (3 smallest PDFs >300 KB, 1 SOA page)"
-rm -rf $S && mkdir -p $S/docs $S/state $S/cache
+# start clean (safe to re-run): old scratch dir (its manifest is root-owned) + collections
+sudo rm -rf $S && mkdir -p $S/docs $S/state $S/cache
+curl -s -X DELETE localhost:6333/collections/phase_a_smoke_a > /dev/null
+curl -s -X DELETE localhost:6333/collections/phase_a_smoke_b > /dev/null
 find $P/docs/teamcenter-2512 -maxdepth 1 -name '*.pdf' -size +300k -printf '%s\t%p\n' \
   | sort -n | head -3 | cut -f2- | while read -r f; do cp --reflink=always "$f" $S/docs/; done
 find "$P/docs/teamcenter-2512/SOA Reference" -name '*.md' -size +4k | head -1 \

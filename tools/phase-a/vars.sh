@@ -13,6 +13,14 @@ NEW_MANIFEST=manifest-subject-keyed.sqlite            # under $P/state
 SUBJECTS="teamcenter-whats-new teamcenter-2512"       # rebuild order: small one first
 mkdir -p "$OUT"
 
+# Ask for the sudo password ONCE, up front, and keep it fresh for the whole script —
+# a long step (an ingest) otherwise outlives sudo's 5-minute cache and the next sudo
+# sits at a password prompt hidden behind a pipe.
+sudo -v || exit 1
+( while kill -0 $$ 2>/dev/null; do sudo -n true 2>/dev/null; sleep 50; done ) &
+SUDO_KEEPALIVE=$!
+trap 'kill $SUDO_KEEPALIVE 2>/dev/null' EXIT
+
 say()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 ok()   { printf '\033[32mOK\033[0m   %s\n' "$*"; }
 bad()  { printf '\033[31mFAIL\033[0m %s\n' "$*"; FAILED=1; }
@@ -31,7 +39,8 @@ worker() {
 # Print the `collections` stamp table of a manifest file.
 stamps() {
   sudo python3 -c 'import sqlite3,sys
-for r in sqlite3.connect(sys.argv[1]).execute("SELECT collection, subject, embedder FROM collections"): print(*r)' "$1"
+db = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
+for r in db.execute("SELECT collection, subject, embedder FROM collections"): print(*r)' "$1"
 }
 points() {  # $1 collection -> "status count"
   curl -s localhost:6333/collections/$1 | python3 -c \
