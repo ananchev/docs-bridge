@@ -10,25 +10,29 @@
 > **Decision (2026-10-14, user):** no re-embed of the old collection (the former step
 > R), no parity with the stored vectors. The Mac mini **rebuilds from scratch**:
 > docling 2.130 re-parses every file, the frozen bge-m3 INT8 model embeds on the new
-> runtime, into a **new manifest** and **new collections**, laid out as three subjects:
+> runtime, into a **new manifest** and **new collections**, with Teamcenter split
+> by version, each subject in its own dir:
 >
-> | Subject | Collection | Source |
-> |---|---|---|
-> | `teamcenter-2512` | `teamcenter_2512` | `/data/docs/teamcenter`, minus the what's-new docs |
-> | `teamcenter-whats-new` | `teamcenter_whats_new` | `/data/docs/teamcenter`, only the what's-new docs |
-> | `teamcenter-2606` | `teamcenter_2606` | `/data/docs/teamcenter-2606` (new) |
-> | `teamcenter-aig`, `power-query` | `aig_docling130`, `pq_docling130` | unchanged dirs |
+> | Subject | Collection | Dir (container) | Content |
+> |---|---|---|---|
+> | `teamcenter-2512` | `teamcenter_2512` | `/data/docs/teamcenter-2512` | `Siemens/Teamcenter 2512/*`, flattened, minus its 3 What's New PDFs |
+> | `teamcenter-whats-new` | `teamcenter_whats_new` | `/data/docs/teamcenter-whats-new` | `Siemens/Teamcenter What's New/*` (14.3 … 2606) + the 2 Gateway What's New PDFs |
+> | `teamcenter-2606` | `teamcenter_2606` | `/data/docs/teamcenter-2606` | **later** (B.5), when the 2606 docs arrive |
+> | `sow` (+ `ecosys`, `polarion`) | `sow_docling130` (…) | unchanged | rebuilt as they are |
 >
-> Two subjects share the old dir and split it with include/exclude, so no file moves
-> and the old stack keeps reading that dir unchanged. The other subjects (`teamcenter-aig`,
-> `power-query`) are rebuilt too, into `<collection>_docling130`: on the new manifest
-> their files are all "new", and with subject-qualified point ids a sync into their
-> old collections would add a second copy of every point. Steps 0–3 were run on
-> 2026-09-29 for the previous plan; the models image (step 2) stands, the **images
-> must be rebuilt** (step 3) because they predate the identity change.
+> The new dirs are **reflink copies** (btrfs, `cp --reflink=always`): no extra disk, and
+> the old `/data/docs/teamcenter` stays exactly as the old stack knows it, so rollback
+> needs no file moves. It is removed at the end of the rollback window.
+> `Teamcenter 2512/Whats New in Teamcenter 2512.pdf` is byte-identical to
+> `whats_new_tc_2512.pdf` and is not copied. The other subjects are rebuilt into
+> `<collection>_docling130` because a fresh manifest sees all their files as new and
+> the new point ids would not overwrite the old points — a sync into the old
+> collection would leave every chunk there twice. `ecosys` and `polarion` have no files
+> yet (nothing to build); `sow` is 33 files / 2.1k chunks.
 >
-> **Inputs still needed from the user:** the globs that pick out the what's-new docs
-> (`WHATSNEW` below), the 2606 files staged on vhost2, and the three descriptions.
+> Steps 0–3 were run on 2026-09-29 for the previous plan; the models image (step 2)
+> stands, the **images must be rebuilt** (step 3) because they predate the identity
+> change.
 
 Nothing here touches the running stack until the switch-over: every image gets a new
 tag, `:latest` is never retagged, the live server keeps serving the old `teamcenter`
@@ -213,7 +217,7 @@ thing to miss for reasons that are not retrieval.
 
 ---
 
-## Step B — the rebuild (two nights)
+## Step B — the rebuild (one night)
 
 ### B.0 — baseline the old collection (2 min)
 
@@ -228,20 +232,46 @@ curl -s localhost:6333/collections/teamcenter | python3 -c \
   | tee ~/phase-a/out/B0-count-old.txt
 ```
 
-### B.1 — stage 2606 and write the new config (10 min)
+### B.1 — lay out the new dirs and write the new config (10 min)
 
-Copy the 2606 documentation to `$P/docs/teamcenter-2606/`, owned like the existing
-`teamcenter` dir. Then derive the new config from the live one — same Qdrant,
-chunking, batch and server settings; new subjects; new manifest. **Fill in
-`WHATSNEW`** (fnmatch globs against the path relative to `/data/docs/teamcenter`;
-`*` spans `/`) and the three descriptions — the descriptions are what an LLM reads to
-choose a subject, so name the version in each:
+Reflink copies (btrfs: instant, no extra disk; the old tree is only read). Run as
+the owner of the docs (`ananchev`), no sudo:
+
+```bash
+D=$P/docs; SRC="$D/teamcenter/Siemens"
+mkdir -p $D/teamcenter-2512 $D/teamcenter-whats-new
+# 2512: everything in "Teamcenter 2512", flattened, minus its What's New PDFs
+cp -a --reflink=always "$SRC/Teamcenter 2512/." $D/teamcenter-2512/
+for f in "Whats New in Teamcenter 2512.pdf" \
+         "Teamcenter Gateway for Enterprise Applications - Whats New.pdf" \
+         "Teamcenter Gateway for SAP Business Suite - Whats New.pdf"; do
+  rm "$D/teamcenter-2512/$f"
+done
+# what's new: the per-release guides + the two Gateway What's New (the 2512 duplicate
+# "Whats New in Teamcenter 2512.pdf" == whats_new_tc_2512.pdf is not copied)
+cp -a --reflink=always "$SRC/Teamcenter What's New/." $D/teamcenter-whats-new/
+cp -a --reflink=always "$SRC/Teamcenter 2512/Teamcenter Gateway for Enterprise Applications - Whats New.pdf" \
+                       "$SRC/Teamcenter 2512/Teamcenter Gateway for SAP Business Suite - Whats New.pdf" \
+                       $D/teamcenter-whats-new/
+# the new trees together = the old one, minus the one duplicate
+old=$(find $D/teamcenter -type f | wc -l); a=$(find $D/teamcenter-2512 -type f | wc -l)
+b=$(find $D/teamcenter-whats-new -type f | wc -l)
+echo "old $old = 2512 $a + whats-new $b + 1 duplicate ? $((a + b + 1))" | tee ~/phase-a/out/B1-split.txt
+ls $D/teamcenter-whats-new | tee -a ~/phase-a/out/B1-split.txt
+```
+
+**Expect** the two numbers to be equal (14075 today) and 9 PDFs in what's-new. The
+doc_ids change with the flattening (`Siemens/Teamcenter 2512/X.pdf` → `X.pdf`); step 6
+rewrites the question labels to match.
+
+Then derive the new config from the live one — same Qdrant, chunking, batch and
+server settings; new subjects; new manifest. The descriptions are what an LLM reads
+to pick a subject: each names its version, and they point at each other.
 
 ```bash
 sudo podman run --rm -i -v $CFG:/in.yaml:ro,z --entrypoint python localhost/ingest-worker:$NEW - \
   > $NEW_CFG <<'EOF'
 import yaml
-WHATSNEW = ["<glob>", "<glob>"]                       # <-- fill in
 c = yaml.safe_load(open("/in.yaml"))
 old = [s for s in c["subjects"] if s["name"] == "teamcenter"]
 assert len(old) == 1, "expected exactly one teamcenter subject"
@@ -249,26 +279,35 @@ others = [s for s in c["subjects"] if s["name"] != "teamcenter"]
 for s in others:                                      # rebuilt into new collections too
     s["collection"] += "_docling130"
 c["subjects"] = [
-    {"name": "teamcenter-2512", "dir": old[0]["dir"], "collection": "teamcenter_2512",
-     "exclude": WHATSNEW,
-     "description": "Siemens Teamcenter 2512 product documentation ..."},          # <-- edit
-    {"name": "teamcenter-whats-new", "dir": old[0]["dir"], "collection": "teamcenter_whats_new",
-     "include": WHATSNEW,
-     "description": "What's new / release notes across Teamcenter versions ..."},  # <-- edit
-    {"name": "teamcenter-2606", "dir": "/data/docs/teamcenter-2606", "collection": "teamcenter_2606",
-     "description": "Siemens Teamcenter 2606 product documentation ..."},          # <-- edit
+    {"name": "teamcenter-2512", "dir": "/data/docs/teamcenter-2512",
+     "collection": "teamcenter_2512",
+     "description": (
+         "Siemens Teamcenter PLM, release 2512 — installation, configuration, "
+         "administration, Active Workspace, BMIDE data modelling, server/client APIs, "
+         "SOA & ITK development and customization (incl. the SOA API reference), and "
+         "the Active Integration Gateway (T4S/T4EA/T4O) for SAP and enterprise-"
+         "application integration (AIG runs on and is configured through Teamcenter, "
+         "so AIG install/config topics live here). Use for how Teamcenter 2512 works; "
+         "for what changed between releases use teamcenter-whats-new.")},
+    {"name": "teamcenter-whats-new", "dir": "/data/docs/teamcenter-whats-new",
+     "collection": "teamcenter_whats_new",
+     "description": (
+         "Siemens Teamcenter release notes — the What's New guide of each release "
+         "(Teamcenter 14.3, 2312, 2406, 2412, 2506, 2512, 2606) and the Teamcenter "
+         "Gateway (T4S, T4EA) What's New for 2512. Use for which release introduced, "
+         "changed or removed a feature, and for upgrade planning; for how a feature "
+         "works in detail, search that release's own documentation pool "
+         "(e.g. teamcenter-2512).")},
 ] + others
 c["manifest_path"] = "/data/state/manifest-subject-keyed.sqlite"
-print(yaml.safe_dump(c, sort_keys=False))
+print(yaml.safe_dump(c, sort_keys=False, allow_unicode=True))
 EOF
-grep -nE 'name:|collection:|manifest_path|include|exclude' $NEW_CFG
+grep -nE 'name:|dir:|collection:|manifest_path' $NEW_CFG
 ```
 
-`others` are the remaining subjects (aig, pq): same names and dirs, new collection
-names. They are not gated (the question set is teamcenter's); B.6 verifies them.
-
-Check the split before spending a night on it — the what's-new subject must get
-exactly the files you mean, and 2512 everything else:
+`others` are the remaining subjects (sow, ecosys, polarion): same names, dirs and
+descriptions, new collection names. They are not gated (the question set is
+teamcenter's); B.6 verifies them. Check the scan sees what B.1's copy laid out:
 
 ```bash
 sudo podman run --rm -v $P/docs:/data/docs:ro,z -v $NEW_CFG:/config/config.yaml:ro,z \
@@ -276,16 +315,13 @@ sudo podman run --rm -v $P/docs:/data/docs:ro,z -v $NEW_CFG:/config/config.yaml:
 from docs_bridge import config
 from docs_bridge.parse import scan
 cfg = config.load("/config/config.yaml")
-for n in [s.name for s in cfg.subjects]:
-    found = scan(cfg.subject(n), cfg)
-    print(n, len(found))
-    if n == "teamcenter-whats-new":
-        print("  " + "\n  ".join(sorted(found)))
-' 2>&1 | tee ~/phase-a/out/B1-split.txt
+for s in cfg.subjects:
+    print(s.name, len(scan(s, cfg)))
+' 2>&1 | tee -a ~/phase-a/out/B1-split.txt
 ```
 
-**Expect** `teamcenter-2512` + `teamcenter-whats-new` = the old file count (B.0's
-manifest rows), and the listed what's-new files to be exactly the intended ones.
+**Expect** the counts to match the file counts above (minus any unsupported
+suffixes, which the old corpus skipped too).
 
 ### B.2 — pause the nightly ingest
 
@@ -302,8 +338,7 @@ To undo (the plan is abandoned): `sudo systemctl start docs-bridge-ingest.timer`
 
 ### B.3 — night 1: 2512 + what's-new, detached
 
-A full teamcenter ingest was ~13 h on the old stack; 2606 is probably similar, so
-it gets its own night. `-d` keeps the run alive if SSH drops. Live queries get slower
+A full teamcenter ingest was ~13 h on the old stack, so this is one night. `-d` keeps the run alive if SSH drops. Live queries get slower
 while it runs (same cores), so start in the evening:
 
 ```bash
@@ -315,7 +350,7 @@ rebuild() {  # $1 subject
 }
 rebuild teamcenter-whats-new                          # small: doubles as the speed probe
 sudo podman logs -f rebuild-teamcenter-whats-new      # wait for its summary line
-for s in teamcenter-aig power-query; do               # the small ones, one at a time
+for s in sow; do                                      # the small ones (ecosys, polarion: no files yet)
   rebuild $s && sudo podman wait rebuild-$s && sudo podman logs rebuild-$s 2>&1 | tail -1
 done
 rebuild teamcenter-2512
@@ -333,8 +368,8 @@ already done — no work is repeated beyond the batch in flight.
 
 ### B.4 — log RAM while it runs
 
-Qdrant now grows a second copy of teamcenter next to the old one (and a third
-corpus on night 2), plus the worker and the live server, in 16 GB:
+Qdrant now grows a second copy of teamcenter next to the old one (and 2606 later),
+plus the worker and the live server, in 16 GB:
 
 ```bash
 sudo -v
@@ -347,24 +382,37 @@ done' > ~/phase-a/out/B4-ram-$(date +%m%d).txt 2>&1 &
 
 In the morning: `available` should never have approached 0, and no container should
 have restarted (`sudo podman ps -a`). **A RAM problem is the one finding that would
-change the plan** (e.g. snapshot and drop the old collection before night 2, accepting
-a restore-based rollback).
+change the plan** (e.g. snapshot and drop the old collection right after the switch,
+accepting a restore-based rollback, and before 2606 is added).
 
-### B.5 — night 2: 2606
+### B.5 — later: 2606, when its docs arrive
+
+Not part of the first rebuild. When the 2606 documentation is on the host, lay it out
+flat like 2512 (`$P/docs/teamcenter-2606/X.pdf`, an SOA Reference subdir if it ships
+one), add the subject to `$NEW_CFG` — and, after the switch-over, to the operator
+contract — then one night:
+
+```yaml
+  - name: teamcenter-2606
+    dir: /data/docs/teamcenter-2606
+    collection: teamcenter_2606
+    description: "Siemens Teamcenter PLM, release 2606 — <same scope as teamcenter-2512>.
+      Use for how Teamcenter 2606 works; for what changed between releases use
+      teamcenter-whats-new."
+```
 
 ```bash
-sudo podman rm rebuild-teamcenter-whats-new rebuild-teamcenter-aig rebuild-power-query \
-  rebuild-teamcenter-2512
 rebuild teamcenter-2606
 sudo podman logs -f rebuild-teamcenter-2606
 ```
 
-(and B.4's RAM loop again).
+(and B.4's RAM loop again), then B.6 and 6b. After the switch-over this is no longer
+a runbook step: the nightly timer picks up a new subject by itself.
 
 ### B.6 — check the rebuild (10 min), after both nights
 
 ```bash
-sudo podman rm rebuild-teamcenter-2606
+sudo podman rm rebuild-teamcenter-whats-new rebuild-sow rebuild-teamcenter-2512
 cd ~/phase-a/src
 # every subject:collection pair of the new config
 PAIRS=$(sudo podman run --rm -v $NEW_CFG:/config/config.yaml:ro,z --entrypoint python \
@@ -415,22 +463,28 @@ c.setdefault("rerank", {})["multi_top_n"] = c["rerank"].get("top_n", 30)
 print(yaml.safe_dump(c, sort_keys=False))
 PY
 grep -n 'top_n' ~/phase-a/config-gate.yaml
+# the flattened layout drops the "Siemens/Teamcenter 2512/" prefix from every doc_id
+sed 's#doc: "Siemens/Teamcenter 2512/#doc: "#' ~/phase-a/src/notes/gate2/questions-teamcenter.yaml \
+  > ~/phase-a/src/notes/gate2/questions-teamcenter-flat.yaml
+grep -c 'doc: "Siemens' ~/phase-a/src/notes/gate2/questions-teamcenter-flat.yaml   # expect 0
 ```
 
 Then, **one image at a time** (each holds ~4.4 GB; the live server holds another):
 
 ```bash
 cd ~/phase-a/src
-rab_run() {  # $1 image  $2 label  $3 config  $4 subject(s)
+rab_run() {  # $1 image  $2 label  $3 config  $4 subject(s)  $5 questions file
   sudo podman run --rm -i --network docs-bridge-net \
     -v $3:/config/config.yaml:ro,z -v ~/phase-a/out:/out:z \
     -v ~/phase-a/src/notes/gate2:/q:ro,z \
-    --entrypoint python $1 - run --questions /q/questions-teamcenter.yaml \
+    --entrypoint python $1 - run --questions /q/$5 \
     --subject $4 --label $2 --out /out/06-retrieval-$2.json \
     < tools/eval/retrieval_ab.py 2>&1 | tee ~/phase-a/out/06-retrieval-$2.txt
 }
-rab_run $OLD_SERVER                old $CFG                     teamcenter
-rab_run localhost/docs-bridge:$NEW new ~/phase-a/config-gate.yaml teamcenter-2512,teamcenter-whats-new
+rab_run $OLD_SERVER                old $CFG                      teamcenter \
+  questions-teamcenter.yaml
+rab_run localhost/docs-bridge:$NEW new ~/phase-a/config-gate.yaml teamcenter-2512,teamcenter-whats-new \
+  questions-teamcenter-flat.yaml
 python3 tools/eval/retrieval_ab.py compare --old ~/phase-a/out/06-retrieval-old.json \
   --new ~/phase-a/out/06-retrieval-new.json --json ~/phase-a/out/06-compare.json \
   | tee ~/phase-a/out/06-compare.txt
@@ -450,12 +504,13 @@ label is stale (docling 2.130 parsed the passage differently) — fix the label,
 **If it FAILS on real regressions, stop.** Nothing has been switched; the only thing
 to undo is the paused timer (B.2). Bring `B*`, `06-*` and `07-*` back.
 
-### 6b — the two-version view (report only, 5 min)
+### 6b — the two-version view (after B.5; report only, 5 min)
 
 Not a gate — a look at what callers will see when they ask about both versions:
 
 ```bash
-rab_run localhost/docs-bridge:$NEW both $NEW_CFG teamcenter-2512,teamcenter-2606
+rab_run localhost/docs-bridge:$NEW both $NEW_CFG teamcenter-2512,teamcenter-2606 \
+  questions-teamcenter-flat.yaml
 ```
 
 Its hit@k is informational (the labels point at 2512 docs; a 2606 copy of the same
@@ -484,14 +539,12 @@ Not done here. What `containers-at-home` (`applications/docs-bridge.yml`, the
    macmini-rebuild <sha from step 0>`) and pin the deploy to it
    (`-e docs_bridge_ref=macmini-rebuild`; `prep.yml` defaults to the `mac-mini`
    branch tip). Simplest of all: re-use the step-3 images as they are.
-4. **The config contract:** the three Teamcenter subjects replace `teamcenter`
-   (names, collections, descriptions), the other subjects' collections get their
-   `_docling130` names, and `manifest_path` becomes
-   `/data/state/manifest-subject-keyed.sqlite` — all exactly as in `$NEW_CFG`; diff
-   the rendered config against it. **The template must render per-subject
-   `include` / `exclude`** — today it renders only name, dir, collection and
-   description, and without them the 2512 / what's-new split silently collapses (2512
-   would ingest the what's-new docs too).
+4. **The config contract:** `teamcenter-2512` and `teamcenter-whats-new` replace
+   `teamcenter` (names, dirs, collections, descriptions), the other subjects'
+   collections get their `_docling130` names, and `manifest_path` becomes
+   `/data/state/manifest-subject-keyed.sqlite` — all exactly as in `$NEW_CFG`; diff the
+   rendered config against it. The subjects' `dir`s must exist under the payload root
+   (`prep.yml` creates missing ones, empty — harmless, B.1 already filled them).
 5. **The restore path must know the new names.** Backups discover collections live;
    the deploy's "Recover collections" step restores by configured name — check it maps
    the three new collections and the new manifest file.
@@ -513,4 +566,5 @@ the old manifest and the old collections (`teamcenter`, `aig`, `pq`) were never
 written by any step above — **as long as they exist.** Keep them for a rollback window
 (a week or two of normal use), then take a final snapshot of each, drop them (`curl -X
 DELETE localhost:6333/collections/<name>`) and archive the old manifest; that also
-gives the RAM back (B.4).
+gives the RAM back (B.4). Remove the old `$P/docs/teamcenter` tree at the same time
+(the reflink copies own their data; nothing else references the old paths).
