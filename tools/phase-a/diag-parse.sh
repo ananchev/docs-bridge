@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Diagnose one document that the new worker cannot parse in bounded memory: parse it
-# ALONE, memory-capped, and report where time and memory go (docling convert vs
-# chunking), sampling RSS every 15 s. Writes nothing but $OUT/diag-*.txt.
+# Parse one document ALONE in the real worker image, memory-capped, and report time,
+# memory (RSS every 15 s), docling's label counts, and the chunk-level symptoms of the
+# 2026-10-15 regression: formula placeholders, and whether `taxonomy -f=` survived
+# (default doc: Teamcenter Administration.pdf). Writes nothing but $OUT/diag-*.txt.
 #   ./diag-parse.sh "<doc file name under teamcenter-2512>"
 # Do not run it while a rebuild is running (they would compete for RAM).
 set -uo pipefail
 . "$(dirname "$0")/vars.sh"
-DOC=${1:-"Teamcenter Gateway for Enterprise Applications - Basic Configuration Guide.pdf"}
+DOC=${1:-"Teamcenter Administration.pdf"}
 if sudo podman ps -q --filter name=rebuild- | grep -q .; then
   bad "a rebuild is running — run this after it finishes"; finish
 fi
@@ -37,11 +38,15 @@ print(f"CONVERT done in {time.time()-t1:.0f}s: {len(doc.pages)} pages, {len(doc.
 big = sorted(((t.data.num_rows * t.data.num_cols, t.data.num_rows, t.data.num_cols,
                t.prov[0].page_no if t.prov else None) for t in doc.tables), reverse=True)[:5]
 print("largest tables (cells, rows, cols, page):", big, flush=True)
-phase[0] = "chunk"; t2 = time.time(); n = 0; longest = 0
-for ch in p._chunker.chunk(doc):
-    n += 1; longest = max(longest, len(ch.text or ""))
-    if n % 200 == 0: print(f"  ... {n} chunks, {time.time()-t2:.0f}s, rss {rss()} MB", flush=True)
-print(f"CHUNK done in {time.time()-t2:.0f}s: {n} chunks, longest {longest} chars; "
+from collections import Counter
+labels = Counter(str(x.label) for x in doc.texts)
+print("labels:", dict(labels.most_common(10)), flush=True)
+phase[0] = "chunk"; t2 = time.time()
+chunks = [ch.text for ch in p._chunker.chunk(doc)]
+print(f"CHUNK done in {time.time()-t2:.0f}s: {len(chunks)} chunks; "
+      f"formula={labels['formula']} code={labels['code']} "
+      f"placeholders={sum(x.count('formula-not-decoded') for x in chunks)} "
+      f"taxonomy_cmd={'yes' if any('taxonomy -f=' in x for x in chunks) else 'NO'}; "
       f"peak rss {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024} MB", flush=True)
 PY
 code=${PIPESTATUS[0]}
