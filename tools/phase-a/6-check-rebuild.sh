@@ -48,4 +48,6 @@ say "4. indexed?"
 for c in teamcenter_2512 teamcenter_whats_new teamcenter; do echo "$c $(points $c)"; done | tee $OUT/6-counts.txt
 grep -E '^teamcenter_(2512|whats_new) ' $OUT/6-counts.txt | grep -qv ' green ' \
   && bad "not green yet — Qdrant is still indexing; wait 15 min and re-run" || ok "green"
+sudo podman ps --format '{{.Names}}' | grep -qx docs-bridge \
+  || echo "NOTE: the live server is stopped (5b); keep it so through ./7-gate.sh, then: sudo podman start docs-bridge"
 finish "Next: ./7-gate.sh (after the labels are verified)"

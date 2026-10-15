@@ -31,11 +31,16 @@ PY
 say "the live server has grown overnight"
 sudo podman stats --no-stream --format '{{.Name}} {{.MemUsage}}' docs-bridge
 free -m | sed -n 1,3p
-read -r -p "Restart the live docs-bridge server to give that memory back? (a few seconds of downtime) [y/N] " ans
-if [[ "$ans" =~ ^[Yy] ]]; then
-  sudo podman restart docs-bridge >/dev/null && ok "restarted" || bad "restart failed — check: sudo podman ps -a"
-  sleep 5; free -m | sed -n 2,3p
-fi
+echo "  s = STOP it until the rebuild and the gate are done (frees all of it; no search meanwhile)"
+echo "  r = restart it (frees what it grew; a few seconds of downtime)"
+echo "  n = leave it"
+read -r -p "Live docs-bridge server: [s/r/n] " ans
+case "$ans" in
+  [Ss]*) sudo podman stop docs-bridge >/dev/null && ok "stopped — start it again with: sudo podman start docs-bridge" \
+           || bad "stop failed — check: sudo podman ps -a" ;;
+  [Rr]*) sudo podman restart docs-bridge >/dev/null && ok "restarted" || bad "restart failed — check: sudo podman ps -a" ;;
+esac
+sleep 5; free -m | sed -n 2,3p
 
 say "resuming teamcenter-2512 (detached, capped at $WORKER_MEM)"
 start_rebuild teamcenter-2512 && ok "running as container rebuild-teamcenter-2512" || { bad "did not start"; finish; }

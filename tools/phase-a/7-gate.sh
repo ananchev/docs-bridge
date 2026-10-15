@@ -42,4 +42,6 @@ python3 tools/eval/retrieval_ab.py compare --old $OUT/7-retrieval-old.json \
 grep -q 'VERDICT: PASS' $OUT/7-compare.txt && ok "PASS" \
   || bad "not PASS — a MISS may be a stale label (docling 2.130 parsed the text differently); I check each"
 echo "(ignore the top-k overlap figure: the re-parse changed every chunk id)"
+sudo podman ps --format '{{.Names}}' | grep -qx docs-bridge \
+  || echo "REMINDER: the live server is stopped — start it again: sudo podman start docs-bridge"
 finish "Send me $OUT (rsync -a --exclude '*.tar' vhost2:phase-a/out/ notes/phase-a/) — then the switch-over."
