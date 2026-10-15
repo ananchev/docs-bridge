@@ -7,7 +7,12 @@ set -uo pipefail
 cd "$SRC"
 
 if sudo podman ps -q --filter name=rebuild-teamcenter-2512 | grep -q .; then
-  echo "Still running. Progress:"; sudo podman logs --tail 3 rebuild-teamcenter-2512 2>&1
+  staged=$(sudo python3 -c 'import sqlite3
+db = sqlite3.connect("file:'$P/state/$NEW_MANIFEST'?mode=ro", uri=True)
+print(db.execute("SELECT count(*) FROM staged_chunks WHERE subject = ?", ("teamcenter-2512",)).fetchone()[0])')
+  echo "Still running: teamcenter_2512 has $(points teamcenter_2512 | cut -d' ' -f2) points; $staged chunks staged."
+  echo "(while it embeds, points rise towards the staged count; then it parses the rest)"
+  free -m | sed -n 1,3p
   exit 0
 fi
 
@@ -17,10 +22,9 @@ code=$(sudo podman inspect rebuild-teamcenter-2512 --format '{{.State.ExitCode}}
 grep '^\[teamcenter-2512\]' $OUT/6-rebuild-2512.txt | tail -1
 if [ "$code" = 0 ]; then ok "exit 0"; sudo podman rm rebuild-teamcenter-2512 >/dev/null
 else
-  bad "exit code $code — if it was killed (OOM, reboot), restart it: re-run ./5-start-rebuild.sh
-       (it resumes: what was done is skipped)"; finish
+  bad "exit code $code (137 = hit the memory cap) — send me $OUT; ./5b-resume.sh resumes it"; finish
 fi
-grep -iE 'out of memory|killed' $OUT/5-ram.txt && bad "memory trouble in $OUT/5-ram.txt"
+grep -iE 'out of memory|killed' $OUT/5*-ram.txt && bad "memory trouble in the RAM logs"
 
 say "1. a second sync must change nothing"
 for s in $SUBJECTS; do worker localhost/ingest-worker:$NEW sync --subject $s 2>&1 | grep '^\['; done \

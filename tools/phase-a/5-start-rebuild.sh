@@ -17,7 +17,7 @@ ok "timer stopped (undo: sudo systemctl start docs-bridge-ingest.timer)"
 
 say "teamcenter-whats-new (foreground, ~10-20 min)"
 t0=$(date +%s)
-worker localhost/ingest-worker:$NEW sync --subject teamcenter-whats-new --verbose \
+worker localhost/ingest-worker:$NEW sync --subject teamcenter-whats-new \
   > $OUT/5-whats-new.txt 2>&1 && ok "done" || { bad "see $OUT/5-whats-new.txt"; finish; }
 dt=$(( $(date +%s) - t0 ))
 line=$(grep '^\[teamcenter-whats-new\]' $OUT/5-whats-new.txt | tail -1); echo "$line"
@@ -26,20 +26,11 @@ echo "$dt s for $chunks chunks = $(python3 -c "print(round($dt/max($chunks,1),2)
   | tee -a $OUT/5-whats-new.txt
 
 say "starting teamcenter-2512 detached"
-sudo podman rm -f rebuild-teamcenter-2512 >/dev/null 2>&1
-sudo podman run -d --name rebuild-teamcenter-2512 --network docs-bridge-net \
-  -v $P/docs:/data/docs:ro,z -v $P/state:/data/state:z -v $P/cache:/data/cache:z \
-  -v $NEW_CFG:/config/config.yaml:ro,z \
-  localhost/ingest-worker:$NEW sync --subject teamcenter-2512 --verbose >/dev/null \
+start_rebuild teamcenter-2512 \
   && ok "running as container rebuild-teamcenter-2512" || { bad "did not start"; finish; }
 
 say "RAM logger (every 10 min until the rebuild exits)"
-sudo nohup sh -c 'while podman ps -q --filter name=rebuild-teamcenter-2512 | grep -q .; do
-  date; free -m | sed -n 2p
-  podman stats --no-stream --format "{{.Name}} {{.MemUsage}}"
-  sleep 600
-done; date; free -m; podman stats --no-stream' > $OUT/5-ram.txt 2>&1 &
+ram_logger rebuild-teamcenter-2512 $OUT/5-ram.txt
 ok "logging to $OUT/5-ram.txt"
 
-finish "Watch it (optional): sudo podman logs -f --tail 5 rebuild-teamcenter-2512   (Ctrl-C detaches)
-Tomorrow: ./6-check-rebuild.sh"
+finish "Progress any time: ./6-check-rebuild.sh (it says 'still running' until done)"

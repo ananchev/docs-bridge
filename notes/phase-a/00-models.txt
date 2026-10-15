@@ -1,0 +1,15 @@
+== localhost/ingest-worker:latest
+8ead5c66de367d5ef4154f2b0a46bc773a147ad84dc0e976a025ba5d884872b0  /opt/bge-m3-onnx/meta.json
+68086607db73f9c336bbaced6dfe8543cdbc15a34681bf25bc678e930c2ad3d2  /opt/bge-m3-onnx/model.int8.onnx
+31eec453b1bed92daefc6f5df8f0bf7c32361285a1a5d977004cd88bf2362fa2  /opt/bge-m3-onnx/sparse_linear.npz
+249df0778f236f6ece390de0de746838ef25b9d6954b68c2ee71249e0a9d8fd4  /opt/bge-m3-onnx/tokenizer.json
+1.20.1 0.19.1 1.26.4
+== docker.io/library/docs-bridge:latest
+8ead5c66de367d5ef4154f2b0a46bc773a147ad84dc0e976a025ba5d884872b0  /opt/bge-m3-onnx/meta.json
+68086607db73f9c336bbaced6dfe8543cdbc15a34681bf25bc678e930c2ad3d2  /opt/bge-m3-onnx/model.int8.onnx
+31eec453b1bed92daefc6f5df8f0bf7c32361285a1a5d977004cd88bf2362fa2  /opt/bge-m3-onnx/sparse_linear.npz
+249df0778f236f6ece390de0de746838ef25b9d6954b68c2ee71249e0a9d8fd4  /opt/bge-m3-onnx/tokenizer.json
+0dbe0e76b9e48460e18c6dc0e55f2f6d6c5d59ed12823895cbe255d73c4491f5  /opt/bge-reranker-onnx/meta.json
+2b00fea95826bcb633cd0625ca64e258fc4017a93aae129d18973cdbd6162508  /opt/bge-reranker-onnx/model.int8.onnx
+8bf8afbfd11306bd872018c53bfdf2e160a56f8edbcf49933324404791c148d3  /opt/bge-reranker-onnx/tokenizer.json
+1.20.1 0.19.1 1.26.4

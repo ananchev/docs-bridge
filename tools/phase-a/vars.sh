@@ -31,8 +31,12 @@ finish() {
 }
 
 # A worker run with the live mounts (same as the systemd unit) and the rebuild config.
+# Memory cap for every worker container: a runaway parse then dies alone (exit 137)
+# instead of pushing the host into swap and the kernel OOM killer (2026-10-15 01:56).
+WORKER_MEM=7g
+WORKER_LIMITS="--memory $WORKER_MEM --memory-swap $WORKER_MEM"
 worker() {
-  sudo podman run --rm --network docs-bridge-net \
+  sudo podman run --rm --network docs-bridge-net $WORKER_LIMITS \
     -v $P/docs:/data/docs:ro,z -v $P/state:/data/state:z -v $P/cache:/data/cache:z \
     -v $NEW_CFG:/config/config.yaml:ro,z "$@"
 }
@@ -41,6 +45,23 @@ stamps() {
   sudo python3 -c 'import sqlite3,sys
 db = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
 for r in db.execute("SELECT collection, subject, embedder FROM collections"): print(*r)' "$1"
+}
+# Start a detached rebuild of one subject: capped, NOT verbose (a verbose run logs
+# every PDF page; podman stopped recording at ~31 MB and hid the end of the last run).
+start_rebuild() {  # $1 subject
+  sudo podman rm -f rebuild-$1 >/dev/null 2>&1
+  sudo podman run -d --name rebuild-$1 --network docs-bridge-net $WORKER_LIMITS \
+    -v $P/docs:/data/docs:ro,z -v $P/state:/data/state:z -v $P/cache:/data/cache:z \
+    -v $NEW_CFG:/config/config.yaml:ro,z \
+    localhost/ingest-worker:$NEW sync --subject $1 >/dev/null
+}
+# Log RAM every 10 min while container $1 runs, into file $2.
+ram_logger() {
+  sudo nohup sh -c 'while podman ps -q --filter name='$1' | grep -q .; do
+    date; free -m | sed -n 2,3p
+    podman stats --no-stream --format "{{.Name}} {{.MemUsage}}"
+    sleep 600
+  done; date; free -m; podman stats --no-stream' > $2 2>&1 &
 }
 points() {  # $1 collection -> "status count"
   curl -s localhost:6333/collections/$1 | python3 -c \

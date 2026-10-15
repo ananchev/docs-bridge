@@ -11,9 +11,13 @@ cd ~/phase-a/src/tools/phase-a
 #   labels: OPTIONAL — drafts are fine for this gate (runbook step 8)
 ./4-config.sh           # ~2 min   write the rebuild config, check the file counts
 ./5-start-rebuild.sh    # evening  pause timer, what's-new now, 2512 overnight (detached)
-./6-check-rebuild.sh    # morning  is the rebuild complete and consistent?
+./5b-resume.sh          # only if 5's overnight run died: resume it (quarantines the PDF that OOMed)
+./6-check-rebuild.sh    # any time progress while running; the full checks once it is done
 ./7-gate.sh             # ~25 min  old vs new on the 45 questions -> VERDICT
 ```
+
+`./diag-parse.sh "<file>"` parses one document alone under a 10 GB cap and reports
+where its time and memory go — run it when no rebuild is running.
 
 Every script ends with **Step passed** (go to the next) or **Step FAILED** (stop and
 send me `~/phase-a/out`). Nothing before `5-start-rebuild.sh` changes the running

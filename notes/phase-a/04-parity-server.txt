@@ -1,0 +1,27 @@
+embed upgrade parity
+  old: onnxruntime 1.20.1, tokenizers 0.19.1, numpy 1.26.4, python 3.11.16 [aarch64]
+  new: onnxruntime 1.30.0, tokenizers 0.23.2, numpy 2.4.6, python 3.11.16 [aarch64]
+
+1. SAME MODEL: yes
+     model.int8.onnx    = 68086607db73f9c3
+     sparse_linear.npz  = 31eec453b1bed92d
+     tokenizer.json     = 249df0778f236f6e
+     meta.json          = 8ead5c66de367d5e
+
+2. SAME TOKENS: 445/445 texts tokenize identically
+
+3. OLD vs NEW runtime (400 chunks + 45 questions, 1 text per call)
+     dense cosine  mean 0.986694  min 0.979224   (bar: every text >= 0.999)
+     sparse Jacc.  mean 0.9620  min 0.6988     (bar: mean >= 0.95)
+     worst: 0.979224  Siemens/Teamcenter 2512/Teamcenter Gateway for Enterprise Applications - Basic Configuration Guide.pdf: 'Below is a sample illustrating the use of all main extension'
+     worst: 0.979525  Siemens/Teamcenter 2512/SOA Reference/strong/AutomationElectricDesign/com/teamcenter/soa/client/model/strong/Aed0FluidicConnection.md: 'public double get_aed0Minbendingradiusins() throws NotLoaded'
+     worst: 0.980270  Siemens/Teamcenter 2512/Teamcenter Utilities.pdf: 'As specified in Setting up a Teamcenter command-line environ'
+
+4. vs the STORED vectors (baseline = the old runtime's own distance)
+     dense  old->stored mean 0.982061 min 0.969077 | new->stored mean 0.982060 min 0.971374
+     sparse old->stored mean 0.9605          | new->stored mean 0.9584
+
+VERDICT: FAIL
+  - old-vs-new dense cosine min 0.979224 < 0.999
+
+wrote /out/04-parity-server.json

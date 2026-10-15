@@ -1,0 +1,59 @@
+
+rerank A/B | fixture=/fx/fixture.json
+  CPU baseline (timing): onnx-cpu-int8 on f6b1bd1e525a [aarch64, 10 cores], 354 ms/pair
+  reference + judge:     /ref/gpu-fp32.json: torch fp32 on cuda [Tesla T4] (BAAI/bge-reranker-v2-m3)
+  candidate:             onnx int8 on CPUExecutionProvider (BAAI/bge-reranker-v2-m3)
+  top_n=40 k=6 max_length=512 oracle_pool=80 queries=8
+  bar: top-3 ordered-identical AND top-6 Jaccard >= 0.83 vs the reference
+
+  warm-up (8 pairs, includes any lazy init): 1.08 s
+
+query                                           s  ms/pr  spdup  top3  jacc  judge    maxS
+------------------------------------------------------------------------------------------
+How do we read properties of a Teamcenter    8.66  216.4   1.6x   yes  1.00    n/a    4.25
+How to read BOM data from Teamcenter in A    9.32  233.0   1.6x    NO  1.00    n/a    3.87
+How to send an email from T4X?               8.47  211.8   1.6x    NO  1.00    n/a    2.67
+How does SAP distinguish if a BOM line wa    9.14  228.4   1.6x   yes  0.71    n/a    6.03
+How do we update basic unit of measure in    8.91  222.8   1.6x    NO  1.00    n/a    2.32
+TC_transfer_area site preference            10.48  262.1   1.6x    NO  0.50    n/a    3.85
+EPM_attach_related_objects                   8.18  204.5   1.6x   yes  0.71    n/a    5.56
+how to bake sourdough bread                  8.36  208.9   1.6x   yes  1.00    n/a   -6.26
+
+speed: 222.8 ms/pair median (1.6x the CPU baseline's 354 ms/pair)
+       => 8.91 s per search at top_n=40, 13.37 s at multi_top_n=60
+
+DIFFERS from the reference on 6/7 queries — adjudicating with the reference as a fixed judge over the deep pool:
+
+  How to read BOM data from Teamcenter in AIG
+    top-3 identical: False  jaccard: 1.00
+    no judge: the reference has no pool scores (make it with --score-pool) — cannot adjudicate
+
+  How to send an email from T4X?
+    top-3 identical: False  jaccard: 1.00
+    no judge: the reference has no pool scores (make it with --score-pool) — cannot adjudicate
+
+  How does SAP distinguish if a BOM line was created in SAP or via an ex
+    top-3 identical: True  jaccard: 0.71
+    no judge: the reference has no pool scores (make it with --score-pool) — cannot adjudicate
+
+  How do we update basic unit of measure in SAP?
+    top-3 identical: False  jaccard: 1.00
+    no judge: the reference has no pool scores (make it with --score-pool) — cannot adjudicate
+
+  TC_transfer_area site preference
+    top-3 identical: False  jaccard: 0.50
+    no judge: the reference has no pool scores (make it with --score-pool) — cannot adjudicate
+
+  EPM_attach_related_objects
+    top-3 identical: True  jaccard: 0.71
+    no judge: the reference has no pool scores (make it with --score-pool) — cannot adjudicate
+
+VERDICT: FAIL
+  - unadjudicated difference on: How to read BOM data from Teamcenter in AIG
+  - unadjudicated difference on: How to send an email from T4X?
+  - unadjudicated difference on: How does SAP distinguish if a BOM line was created in SAP or
+  - unadjudicated difference on: How do we update basic unit of measure in SAP?
+  - unadjudicated difference on: TC_transfer_area site preference
+  - unadjudicated difference on: EPM_attach_related_objects
+
+wrote /out/2-rerank-vs-fp32.json

@@ -1,0 +1,2 @@
+[smoke-a] 0 new / 0 changed / 0 deleted / 4 unchanged (0 chunks embedded)
+[smoke-b] 0 new / 0 changed / 0 deleted / 4 unchanged (0 chunks embedded)
