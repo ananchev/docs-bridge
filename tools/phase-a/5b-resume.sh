@@ -16,7 +16,7 @@ if sudo podman ps -q --filter name=rebuild-teamcenter-2512 | grep -q .; then
 fi
 systemctl is-active -q docs-bridge-ingest.timer && { bad "the nightly timer is active again — stop it first"; finish; }
 
-say "quarantine (excluded from teamcenter-2512 until fixed)"
+say "config: embed batch 32 (memory), and the quarantine (excluded from teamcenter-2512 until fixed)"
 printf '  %s\n' "${QUARANTINE[@]}"
 sudo podman run --rm -i -v $NEW_CFG:/in.yaml:ro,z --entrypoint python localhost/ingest-worker:$NEW - \
   "${QUARANTINE[@]}" > $NEW_CFG.tmp <<'PY'
@@ -24,6 +24,10 @@ import sys, yaml
 c = yaml.safe_load(open("/in.yaml"))
 s = next(s for s in c["subjects"] if s["name"] == "teamcenter-2512")
 s["exclude"] = sorted(set(s.get("exclude") or []) | set(sys.argv[1:]))
+# 2026-10-15: batch 64 peaks at 7.6 GB on the corpus' longest chunk (587 tokens; the
+# embedder pads a batch to its longest, attention ~ batch x len^2); batch 32 peaks at
+# 3.7 GB and is slightly faster (0.154 vs ~0.175 s/chunk) — measured on vhost2.
+c.setdefault("ingest", {})["batch_size"] = 32
 print(yaml.safe_dump(c, sort_keys=False, allow_unicode=True))
 PY
 [ -s $NEW_CFG.tmp ] && mv $NEW_CFG.tmp $NEW_CFG && ok "added to $NEW_CFG" || { bad "could not update the config"; finish; }

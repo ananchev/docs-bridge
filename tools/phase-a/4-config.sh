@@ -33,6 +33,7 @@ c["subjects"] = [
          "(e.g. teamcenter-2512).")},
 ]
 c["manifest_path"] = "/data/state/manifest-subject-keyed.sqlite"
+c.setdefault("ingest", {})["batch_size"] = 32   # batch 64 peaks at 7.6 GB (runbook B.3)
 print(yaml.safe_dump(c, sort_keys=False, allow_unicode=True))
 EOF
 grep -nE '^  - name:|^    dir:|^    collection:|^manifest_path' $NEW_CFG | tee $OUT/4-config.txt

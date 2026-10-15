@@ -555,7 +555,12 @@ Not done here. What `containers-at-home` (`applications/docs-bridge.yml`, the
    `teamcenter` (names, dirs, collections, descriptions), `sow`, `ecosys` and
    `polarion` are removed from the contract for now, and `manifest_path` becomes
    `/data/state/manifest-subject-keyed.sqlite` — all exactly as in `$NEW_CFG`; diff the
-   rendered config against it. The subjects' `dir`s must exist under the payload root
+   rendered config against it. **`ingest.batch_size` becomes 32** (was 64 on the Mac
+   mini): measured 2026-10-15, batch 64 peaks at 7.6 GB on the corpus' longest chunk
+   (587 tokens — the embedder pads each batch to its longest member, and attention
+   memory grows with batch × length²), batch 32 at 3.7 GB and slightly faster. The
+   nightly ingest runs next to the live server on 16 GB, so this matters after the
+   switch, not only for the rebuild. The subjects' `dir`s must exist under the payload root
    (`prep.yml` creates missing ones, empty — harmless, B.1 already filled them).
 5. **The restore path must know the new names.** Backups discover collections live;
    the deploy's "Recover collections" step restores by configured name — check it maps
