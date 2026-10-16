@@ -13,7 +13,7 @@ if sudo podman ps -q --filter name=rebuild- | grep -q .; then
 fi
 LOG=$OUT/diag-$(echo "$DOC" | tr -c 'A-Za-z0-9.\n' '_' | cut -c1-60).txt
 say "parsing alone, capped at 10g: $DOC"
-sudo podman run --rm --network docs-bridge-net --memory 10g --memory-swap 10g \
+sudo podman run --rm -i --network docs-bridge-net --memory 10g --memory-swap 10g \
   -v $P/docs:/data/docs:ro,z -v $P/cache:/data/cache:z -v $NEW_CFG:/config/config.yaml:ro,z \
   --entrypoint python localhost/ingest-worker:$NEW - "/data/docs/teamcenter-2512/$DOC" <<'PY' 2>&1 | tee $LOG
 import resource, sys, threading, time
@@ -50,5 +50,6 @@ print(f"CHUNK done in {time.time()-t2:.0f}s: {len(chunks)} chunks; "
       f"peak rss {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024} MB", flush=True)
 PY
 code=${PIPESTATUS[0]}
+grep -q '^CHUNK done' $LOG || { bad "no result line — the parse did not run (see $LOG)"; finish; }
 [ "$code" = 0 ] && ok "parsed within 10g" || bad "exit $code (137 = hit the 10g cap) — the phase it was in is the last line above"
 finish "Send me $LOG"
