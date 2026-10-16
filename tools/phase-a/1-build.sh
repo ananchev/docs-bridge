@@ -43,4 +43,8 @@ echo "   fc-match Courier -> $mono" | tee -a $OUT/1-images.txt
 grep -qi "nimbus" <<< "$mono" && ok "Courier -> Nimbus Mono (URW)" | tee -a $OUT/1-images.txt \
   || bad "no URW Courier substitute in the worker image" | tee -a $OUT/1-images.txt
 grep -q FAIL $OUT/1-images.txt && FAILED=1
-finish "Next: ./2-rerank.sh"
+if [ -s $OUT/2-rerank-analysis.txt ]; then
+  finish "Next: ./8-reparse-pdfs.sh (2-rerank already passed; it tests the server image, unchanged by a worker fix)"
+else
+  finish "Next: ./2-rerank.sh"
+fi
