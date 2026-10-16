@@ -15,6 +15,8 @@ cd ~/phase-a/src/tools/phase-a
 ./6-check-rebuild.sh    # any time progress while running; the full checks once it is done
 ./7-gate.sh             # ~25 min  old vs new on the 45 questions -> VERDICT
 ./8-reparse-pdfs.sh     # after a worker-image parse fix: re-parse only the PDFs (then 6, 7)
+./9-ingest-2606.sh      # 2606 docs moved in flat: disable timer, (stop server), ingest detached
+./6-check-rebuild.sh teamcenter-2606   # its progress, then the checks for all subjects
 ```
 
 `./diag-parse.sh "<file>"` parses one document alone under a 10 GB cap and reports
