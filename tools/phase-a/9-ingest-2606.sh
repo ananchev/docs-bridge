@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Step 9: ingest Teamcenter 2606 into the rebuild (before the switch-over, so the live
 # server never offers a half-built pool). Put the docs FLAT in
-# $P/docs/teamcenter-2606 first, laid out like teamcenter-2512 (PDFs at the top,
-# `SOA Reference/`, `AIG APIs Documentation/` if shipped) and WITHOUT What's New guides
-# (those belong in teamcenter-whats-new).
+# $P/docs/teamcenter-2606 first, laid out like teamcenter-2512 (PDFs at the top) and
+# WITHOUT What's New guides (those belong in teamcenter-whats-new). The API docs
+# (`SOA Reference/`, `AIG APIs Documentation/`) can follow later: drop them in and the
+# nightly sync adds them — then restore "(incl. the SOA API reference)" in the
+# description, here and in the operator contract.
 #
 # Disables the nightly timer (stopped is not enough: a reboot would bring it back and
 # run the OLD worker at 03:30), offers to stop the live server, adds the subject to
@@ -51,12 +53,13 @@ c["subjects"] = [s for s in c["subjects"] if s["name"] != "teamcenter-2606"] + [
     "name": "teamcenter-2606", "dir": "/data/docs/teamcenter-2606", "collection": "teamcenter_2606",
     "description": (
         "Siemens Teamcenter PLM, release 2606 — installation, configuration, "
-        "administration, Active Workspace, BMIDE data modelling, server/client APIs, "
-        "SOA & ITK development and customization (incl. the SOA API reference), and "
-        "the Active Integration Gateway (T4S/T4EA/T4O) for SAP and "
-        "enterprise-application integration (AIG runs on and is configured through "
-        "Teamcenter, so AIG install/config topics live here). Use for how Teamcenter "
-        "2606 works; for what changed between releases use teamcenter-whats-new.")}]
+        "administration, Active Workspace, BMIDE data modelling, SOA & ITK "
+        "development and customization guides, and the Active Integration Gateway "
+        "(T4S/T4EA/T4O) for SAP and enterprise-application integration (AIG runs on "
+        "and is configured through Teamcenter, so AIG install/config topics live "
+        "here). Use for how Teamcenter 2606 works; for what changed between releases "
+        "use teamcenter-whats-new. The 2606 API reference (SOA/AIG API docs) is not "
+        "included yet — for API details use teamcenter-2512.")}]
 print(yaml.safe_dump(c, sort_keys=False, allow_unicode=True))
 PY
 [ -s $NEW_CFG.tmp ] && mv $NEW_CFG.tmp $NEW_CFG && ok "subjects: $(grep -c '^- name:' $NEW_CFG)" \
