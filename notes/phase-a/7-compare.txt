@@ -1,0 +1,27 @@
+
+old: hit@6 0.98 (41/42), MRR 0.76, controls abstaining 2/3, median 14.7 s/query [onnxruntime 1.20.1, tokenizers 0.19.1]
+  note: 44 question(s) still have DRAFT labels
+
+new: hit@6 0.93 (39/42), MRR 0.74, controls abstaining 2/3, median 7.9 s/query [onnxruntime 1.30.0, tokenizers 0.23.2]
+  note: 44 question(s) still have DRAFT labels
+
+old -> new over 45 questions: top-6 Jaccard mean 0.000 (identical sets on 0), top-3 identical on 0, max |score shift| 3.032
+  tc-001  jaccard 0.00  top-3 CHANGED  max-score shift -0.163
+  tc-002  jaccard 0.00  top-3 CHANGED  max-score shift -0.632
+  tc-003  jaccard 0.00  top-3 CHANGED  max-score shift -0.171
+  tc-004  jaccard 0.00  top-3 CHANGED  max-score shift +0.739
+  tc-005  jaccard 0.00  top-3 CHANGED  max-score shift +0.789
+  tc-006  jaccard 0.00  top-3 CHANGED  max-score shift +0.057
+  tc-007  jaccard 0.00  top-3 CHANGED  max-score shift -0.697
+  tc-008  jaccard 0.00  top-3 CHANGED  max-score shift +0.606
+  tc-009  jaccard 0.00  top-3 CHANGED  max-score shift +1.147
+  tc-010  jaccard 0.00  top-3 CHANGED  max-score shift -0.908
+
+newly answered: none
+no longer answered: tc-002, tc-007
+
+VERDICT: FAIL
+  - tc-002: answered before (rank 1), missed now [draft label]
+  - tc-007: answered before (rank 3), missed now [draft label]
+
+wrote /home/ananchev/phase-a/out/7-compare.json
