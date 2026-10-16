@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Step 7 (runbook step 6): THE GATE. The 45 questions through the real search, old
-# image + old `teamcenter` vs new image + teamcenter-2512 & teamcenter-whats-new
-# (together the same documents). ~25 min; one image at a time (RAM).
+# image + old `teamcenter` vs new image + teamcenter-2512, each a single pool with the
+# same rerank budget. ~25 min; one image at a time (RAM).
 set -uo pipefail
 . "$(dirname "$0")/vars.sh"
 cd "$SRC"
@@ -10,16 +10,13 @@ Q=notes/gate2/questions-teamcenter.yaml
 drafts=$(grep -c 'status: draft' $Q || true)
 [ "$drafts" = 0 ] || echo "NOTE: $drafts questions still have draft labels — the verdict is only as good as the labels."
 
-say "gate config (same rerank budget on both sides) and flattened labels"
-sudo podman run --rm -i -v $NEW_CFG:/in.yaml:ro,z --entrypoint python localhost/docs-bridge:$NEW - \
-  > $A/config-gate.yaml <<'PY'
-import yaml
-c = yaml.safe_load(open("/in.yaml"))
-c.setdefault("rerank", {})["multi_top_n"] = c["rerank"].get("top_n", 30)
-print(yaml.safe_dump(c, sort_keys=False, allow_unicode=True))
-PY
+say "flattened labels"
 sed 's#doc: "Siemens/Teamcenter 2512/#doc: "#' $Q > notes/gate2/questions-teamcenter-flat.yaml
 [ "$(grep -c 'doc: "Siemens' notes/gate2/questions-teamcenter-flat.yaml)" = 0 ] && ok "labels flattened" || bad "labels"
+# The new side searches teamcenter-2512 ALONE. Every label points at a 2512 doc, and a
+# single pool gets the full rerank budget (top_n) like the old side's single pool —
+# 2026-10-15's two-pool gate (2512 + whats-new) split that budget round-robin, half of
+# it to the 1.6k-chunk what's-new pool, and missed answers that were in the index.
 
 rab_run() {  # $1 image  $2 label  $3 config  $4 subject(s)  $5 questions file
   sudo podman run --rm -i --network docs-bridge-net \
@@ -32,7 +29,7 @@ rab_run() {  # $1 image  $2 label  $3 config  $4 subject(s)  $5 questions file
 say "old: live image, old collection (~12 min)"
 rab_run $OLD_SERVER old $CFG teamcenter questions-teamcenter.yaml
 say "new: new image, rebuilt collections (~12 min)"
-rab_run localhost/docs-bridge:$NEW new $A/config-gate.yaml teamcenter-2512,teamcenter-whats-new \
+rab_run localhost/docs-bridge:$NEW new $NEW_CFG teamcenter-2512 \
   questions-teamcenter-flat.yaml
 
 say "compare"

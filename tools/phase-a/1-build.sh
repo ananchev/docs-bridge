@@ -37,5 +37,10 @@ print(v("onnxruntime"), v("tokenizers"), v("numpy"), hasattr(m, "EmbedderMismatc
   [ "$info" = "1.30.0 0.23.2 2.4.6 True 0" ] && ok "versions, code and no CUDA as expected" \
     || bad "expected '1.30.0 0.23.2 2.4.6 True 0'"
 done 2>&1 | tee $OUT/1-images.txt
+say "worker image: a real substitute for non-embedded Courier (docling renders pages)"
+mono=$(sudo podman run --rm --entrypoint fc-match localhost/ingest-worker:$NEW Courier 2>&1)
+echo "   fc-match Courier -> $mono" | tee -a $OUT/1-images.txt
+grep -qi "nimbus" <<< "$mono" && ok "Courier -> Nimbus Mono (URW)" | tee -a $OUT/1-images.txt \
+  || bad "no URW Courier substitute in the worker image" | tee -a $OUT/1-images.txt
 grep -q FAIL $OUT/1-images.txt && FAILED=1
 finish "Next: ./2-rerank.sh"

@@ -24,9 +24,22 @@ FROM python:3.11-slim-bookworm AS base
 
 # Docling pulls PDFs via pypdfium2 and rasterises; RapidOCR uses OpenCV. These cover
 # their native deps. Torch/onnxruntime wheels are self-contained on arm64.
+#
+# FONTS are not optional. Docling's layout model looks at a RENDERED image of each
+# page, and many PDFs do not embed the base-14 fonts — the Teamcenter manuals set every
+# code sample in non-embedded Courier. With no font on the system (the slim image has
+# none) pdfium draws those blocks badly, the layout model sees pictures / formulas /
+# checkboxes instead of code, and their text is dropped from the chunks: measured
+# 2026-10-15, ~70% of command lines lost from the 2512 manuals (`taxonomy -f=...`).
+# fonts-urw-base35 = the metric-compatible substitutes for Courier/Helvetica/Times
+# (+ Symbol, ZapfDingbats); fonts-liberation2 = the same for Arial / Times New Roman /
+# Courier New, common in Office-made PDFs. tools/phase-a/1-build.sh checks for them.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libgl1 \
         libglib2.0-0 \
+        fontconfig \
+        fonts-urw-base35 \
+        fonts-liberation2 \
     && rm -rf /var/lib/apt/lists/*
 
 # HOME on the mounted data volume so the heavy model caches (HuggingFace + Docling
