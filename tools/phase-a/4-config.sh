@@ -25,12 +25,11 @@ c["subjects"] = [
     {"name": "teamcenter-whats-new", "dir": "/data/docs/teamcenter-whats-new",
      "collection": "teamcenter_whats_new",
      "description": (
-         "Siemens Teamcenter release notes — the What's New guide of each release "
-         "(Teamcenter 14.3, 2312, 2406, 2412, 2506, 2512, 2606) and the Teamcenter "
-         "Gateway (T4S, T4EA) What's New for 2512. Use for which release introduced, "
-         "changed or removed a feature, and for upgrade planning; for how a feature "
-         "works in detail, search that release's own documentation pool "
-         "(e.g. teamcenter-2512).")},
+         "Siemens Teamcenter release notes \u2014 the What's New guides published with "
+         "each Teamcenter release and with its companion and add-on products. Use for "
+         "which release introduced, changed or removed a feature, and for upgrade "
+         "planning; for how a feature works in detail, search that release's own "
+         "documentation pool (teamcenter-<release>).")},
 ]
 c["manifest_path"] = "/data/state/manifest-subject-keyed.sqlite"
 c.setdefault("ingest", {})["batch_size"] = 32   # batch 64 peaks at 7.6 GB (runbook B.3)
