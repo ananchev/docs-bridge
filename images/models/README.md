@@ -20,4 +20,5 @@ rebuilt in place — the build script refuses an existing tag.
 
 The GPU tag lives in the EC2 host's Docker store only (no registry yet). Losing it costs
 a ~10-minute rebuild that reproduces the same bytes (`tools/onnx-export/FINDINGS.md`
-finding 5), checked by comparing the sha256s in the manifest.
+finding 5), checked against the manifest committed for that tag in
+[`notes/models/`](../../notes/models/).

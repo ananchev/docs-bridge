@@ -1,0 +1,119 @@
+{
+  "tag": "gpu-2026-10",
+  "docs_bridge_commit": "9e162d7090cb55511d6e5ef9e51927f9e63bf963",
+  "exporter_image": "localhost/docs-bridge-models-export:9e162d7090cb",
+  "models": {
+    "bge-m3-onnx": {
+      "model_id": "BAAI/bge-m3",
+      "revision": "5617a9f61b028005a4858fdac845db406aefb181",
+      "files": {
+        "model.fp16.onnx": {
+          "sha256": "3575fb94feeae220fab8a8caa07827b050674af3e9cde6db1f888b553a45078f",
+          "bytes": 1133902629
+        },
+        "model.onnx": {
+          "sha256": "f5e334af8ec4f1b8942b8f5ea6cb808c0df7a9aad4eb69b0200e607d817dea99",
+          "bytes": 516764
+        },
+        "model.onnx.data": {
+          "sha256": "303112e49a08e26e450d7cf90c3fecf2978983433432db4d1bdc5eb2ecd8e1f0",
+          "bytes": 2266820608
+        },
+        "sparse_linear.npz": {
+          "sha256": "31eec453b1bed92daefc6f5df8f0bf7c32361285a1a5d977004cd88bf2362fa2",
+          "bytes": 4606
+        },
+        "tokenizer.json": {
+          "sha256": "5df1f55d60c9705a501ab9a75550728625740741fe4be308dac4806c16b7d51d",
+          "bytes": 17098085
+        }
+      },
+      "toolchain": {
+        "torch": "2.14.0+cpu",
+        "transformers": "5.17.0",
+        "onnx": "1.23.2",
+        "onnxconverter-common": "1.16.0",
+        "onnxruntime-gpu": "1.30.0",
+        "tokenizers": "0.23.2",
+        "numpy": "2.4.6"
+      }
+    },
+    "bge-reranker-onnx": {
+      "model_id": "BAAI/bge-reranker-v2-m3",
+      "revision": "953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e",
+      "files": {
+        "model.fp16.onnx": {
+          "sha256": "96cf25f506b64ddbfe7374b8ef03bf49fd59bd2c4ff70d458170dbbc578a7a48",
+          "bytes": 1136059220
+        },
+        "tokenizer.json": {
+          "sha256": "5df1f55d60c9705a501ab9a75550728625740741fe4be308dac4806c16b7d51d",
+          "bytes": 17098085
+        }
+      },
+      "toolchain": {
+        "torch": "2.14.0+cpu",
+        "transformers": "5.17.0",
+        "onnx": "1.23.2",
+        "onnxconverter-common": "1.16.0",
+        "onnxruntime-gpu": "1.30.0",
+        "tokenizers": "0.23.2",
+        "numpy": "2.4.6"
+      }
+    }
+  },
+  "check_embed": {
+    "kind": "embed",
+    "model_id": "BAAI/bge-m3",
+    "revision": "5617a9f61b028005a4858fdac845db406aefb181",
+    "files": {
+      "model.onnx": "f5e334af8ec4f1b8942b8f5ea6cb808c0df7a9aad4eb69b0200e607d817dea99",
+      "model.fp16.onnx": "3575fb94feeae220fab8a8caa07827b050674af3e9cde6db1f888b553a45078f"
+    },
+    "onnxruntime": "1.30.0",
+    "provider": "CUDAExecutionProvider",
+    "fixture_created_utc": "2026-09-26T20:11:58Z",
+    "texts": 256,
+    "batch": 16,
+    "dense_cos_min": 0.9998465776443481,
+    "dense_cos_mean": 0.999996542930603,
+    "sparse_weight_max_delta": 0.0696619302034378,
+    "sparse_weight_max": 0.3782842755317688,
+    "padding_cos_min": {
+      "fp32": 0.9999998807907104,
+      "fp16": 0.9999964237213135
+    },
+    "seconds": {
+      "fp32": 8.665231239001514,
+      "fp16": 2.3801929329983977
+    },
+    "bar": "fidelity cos >= 0.9999; dense_cos_min and padding_cos_min >= 0.999",
+    "pass": true,
+    "fidelity_vs_torch_fp32": 0.9999999403953552
+  },
+  "check_rerank": {
+    "kind": "rerank",
+    "model_id": "BAAI/bge-reranker-v2-m3",
+    "revision": "953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e",
+    "files": {
+      "model.onnx": "a193aee89e3669c4aba06c97c45dc5d87663f07d0a953ff8633073ffb5b95cc6",
+      "model.fp16.onnx": "96cf25f506b64ddbfe7374b8ef03bf49fd59bd2c4ff70d458170dbbc578a7a48"
+    },
+    "onnxruntime": "1.30.0",
+    "provider": "CUDAExecutionProvider",
+    "fixture_created_utc": "2026-09-26T20:11:58Z",
+    "max_delta": 0.01658940315246582,
+    "top6_identical": "7/8",
+    "padding_max_delta": {
+      "fp32": 6.198883056640625e-06,
+      "fp16": 0.00390625
+    },
+    "median_s_per_query": {
+      "fp32": 3.0170749885000987,
+      "fp16": 0.8486090714995953
+    },
+    "bar": "fidelity |delta| <= 0.001; max_delta and padding_max_delta <= 0.05",
+    "pass": true,
+    "fidelity_vs_torch_fp32": 5.245208740234375e-06
+  }
+}
