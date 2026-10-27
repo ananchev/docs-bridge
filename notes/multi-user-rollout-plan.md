@@ -581,6 +581,15 @@ health-check target; `/mcp` stays streamable HTTP with a bearer header.
    3. *The embedder service* — fp16/fp32 exports from a pinned HF revision as a new
       `docs-bridge-models` tag, the service image, and the fingerprint extended with
       precision and execution provider.
+      **Exports DONE 2026-10-27:** `localhost/docs-bridge-models:gpu-2026-10` on the
+      host (bge-m3 fp32 + fp16, reranker fp16; bge-m3 `5617a9f`, reranker `953dc6f`),
+      built by `tools/onnx-export/build-gpu-models.sh`. ONNX fp32 = torch fp32 (embed
+      cosine 0.99999994, rerank |Δ| 5e-6); fp16 vs fp32 on ORT CUDA: embed cosine
+      ≥ 0.99985, rerank max |Δ| 0.017; deterministic, so rebuildable. Open from it
+      (`tools/onnx-export/FINDINGS.md`): ORT fp16 reranks at 0.85 s/query against
+      torch's 0.54 s — no fused attention yet (item 1, finding 6); fp16 moves sparse
+      weights up to 0.07 of 0.38 — input to the embedder's precision (finding 7). The
+      fingerprint must hash `model.onnx.data` too when the embedder runs fp32.
 
    **Host facts (inventory 2026-10-27):** Docker 29.8 + NVIDIA Container Toolkit 1.20
    already registered as a runtime, driver 595.91 / CUDA 13.2 (runs CUDA-12 wheels in

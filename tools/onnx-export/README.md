@@ -31,12 +31,19 @@ of the model.
 
 ## Building the GPU models image
 
-On the EC2 host, from a clean checkout of the branch (the image records the commit):
+On the EC2 host, from a clean checkout of the branch (the image records the commit).
+The host's checkout is Ansible's (`/opt/docs-bridge/src`, root-owned, synced by the
+`docs_bridge_src` role in bnl-docs-bridge), hence `sudo`:
 
 ```bash
-tools/onnx-export/build-gpu-models.sh --tag gpu-2026-10 \
-    --work /opt/dlami/nvme/models-export --fixture ~/gate1/fixture.json
+cd /opt/docs-bridge/src
+sudo tools/onnx-export/build-gpu-models.sh --tag gpu-2026-10 \
+    --work /opt/dlami/nvme/models-export --fixture /home/ubuntu/gate1/fixture.json
 ```
+
+Built so far: **`gpu-2026-10`** (2026-10-27, commit `9e162d7`) — both checks PASS;
+record in `/opt/dlami/nvme/models-export/gpu-2026-10/` (instance store: gone after a
+stop/start, the image is not).
 
 All three arguments are required. `--work` takes the HF cache, the export dirs, the
 check results and `build.log` under `<work>/<tag>/`; it can be the instance store, since

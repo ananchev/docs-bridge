@@ -43,8 +43,10 @@ against the torch fp32 reference with the fixed judge over the deep pool
 (gate1-runbook §5.5).
 
 ### 5. The export is deterministic
-Two exports of the reranker in the exporter image produced byte-identical
-`model.onnx` and `model.onnx.data`.
+Two exports of the reranker in one exporter image produced byte-identical
+`model.onnx` and `model.onnx.data`; then the `gpu-2026-10` build, in a separately
+built exporter image, reproduced every file of an earlier trial export of both models
+(fp32, fp16, tokenizer, sparse head) to the same sha256.
 **Resolution:** a models image can be rebuilt from the exporter lock and the two
 pinned revisions, so its export dir may live on the instance store. The sha256s in
 `meta.json` are how a rebuild proves it made the same model — a different hash is a
