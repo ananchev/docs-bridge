@@ -1,0 +1,33 @@
+  import pynvml  # type: ignore[import]
+Loading weights:   0%|          | 0/393 [00:00<?, ?it/s]Loading weights:  31%|███       | 122/393 [00:00<00:00, 1201.24it/s]Loading weights:  62%|██████▏   | 243/393 [00:00<00:00, 1194.98it/s]Loading weights:  92%|█████████▏| 363/393 [00:00<00:00, 1194.07it/s]Loading weights: 100%|██████████| 393/393 [00:00<00:00, 1224.38it/s]
+
+rerank A/B | fixture=fixture.json
+  CPU baseline (timing): onnx-cpu-int8 on f6b1bd1e525a [aarch64, 10 cores], 354 ms/pair
+  reference + judge:     out/gpu-fp32.json: torch fp32 on cuda [Tesla T4] (BAAI/bge-reranker-v2-m3)
+  candidate:             torch fp32 on cuda [Tesla T4] (BAAI/bge-reranker-v2-m3@953dc6f6f85a)
+  top_n=40 k=6 max_length=512 oracle_pool=80 queries=8
+  bar: top-3 ordered-identical AND top-6 Jaccard >= 0.83 vs the reference
+
+  warm-up (8 pairs, includes any lazy init): 0.86 s
+
+query                                           s  ms/pr  spdup  top3  jacc  judge    maxS
+------------------------------------------------------------------------------------------
+How do we read properties of a Teamcenter    2.78   69.6   5.0x   yes  1.00    n/a    4.13
+How to read BOM data from Teamcenter in A    2.84   71.1   5.2x   yes  1.00    n/a    4.20
+How to send an email from T4X?               2.58   64.4   5.2x   yes  1.00    n/a    2.61
+How does SAP distinguish if a BOM line wa    3.04   76.0   4.7x   yes  1.00    n/a    6.43
+How do we update basic unit of measure in    2.93   73.2   4.8x   yes  1.00    n/a    2.59
+TC_transfer_area site preference             3.37   84.3   4.9x   yes  1.00    n/a    3.81
+EPM_attach_related_objects                   2.73   68.2   4.8x   yes  1.00    n/a    5.82
+how to bake sourdough bread                  2.73   68.2   4.9x   yes  1.00    n/a   -6.09
+
+speed: 71.1 ms/pair median (4.9x the CPU baseline's 354 ms/pair)
+       => 2.84 s per search at top_n=40, 4.26 s at multi_top_n=60
+
+SELFTEST: max |candidate - reference| = 0.00e+00 => FAITHFUL
+
+MATCHES the reference on all 7 real queries (top-3 identical, top-6 Jaccard >= 0.83).
+
+VERDICT: PASS
+
+wrote ab/ref-fp32.json

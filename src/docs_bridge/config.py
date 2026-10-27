@@ -51,11 +51,18 @@ class IngestCfg:
 
 @dataclass
 class RerankCfg:
-    """docs-bridge server only. BGE-reranker-v2-m3 as ONNX/INT8 (built on the M2,
-    baked into the server image — the 8GB Pi can't quantize, only run)."""
+    """docs-bridge server only. BGE-reranker-v2-m3 as ONNX, from the models image.
+
+    device / precision / bucket are REQUIRED (plan §8 3b: no silent defaults) -- a
+    config without them refuses to start, naming the key; _rerank() checks them.
+      device     cpu | cuda    (cuda = CUDA provider only, never a CPU fallback)
+      precision  int8 | fp32 | fp16   (int8 is CPU only, fp16 CUDA only)
+      bucket     0 = one batch; N = length-sorted sub-batches of N (rerank.py)"""
+    device: str
+    precision: str
+    bucket: int
     enabled: bool = True
     model_dir: str = "/opt/bge-reranker-onnx"
-    int8: bool = True
     max_length: int = 512          # cross-encoder truncates (query, passage) pairs
     top_n: int = 30                # rerank this many fused candidates, then cut to k
     # Total candidate budget when a search spans MULTIPLE pools (subject=list|"all").
@@ -131,6 +138,32 @@ def _check_unique(subjects: list[Subject], path: str) -> None:
             seen[v] = s.name
 
 
+RERANK_REQUIRED = ("device", "precision", "bucket")
+RERANK_PRECISIONS = {"cpu": ("int8", "fp32"), "cuda": ("fp16", "fp32")}
+
+
+def _rerank(raw: dict, path: str) -> RerankCfg:
+    """RerankCfg from the `rerank:` section, refusing anything missing or impossible."""
+    if "int8" in raw:
+        raise ValueError(f"rerank.int8 in {path} was replaced by rerank.device + "
+                         f"rerank.precision (int8 on CPU: device: cpu, precision: int8)")
+    missing = [k for k in RERANK_REQUIRED if raw.get(k) is None]
+    if missing:
+        raise ValueError(f"rerank.{', rerank.'.join(missing)} not set in {path} -- "
+                         f"required, no default (device: cpu|cuda, precision: "
+                         f"int8|fp32|fp16, bucket: 0 or a sub-batch size)")
+    cfg = RerankCfg(**raw)
+    if cfg.device not in RERANK_PRECISIONS:
+        raise ValueError(f"rerank.device {cfg.device!r} in {path}: cpu or cuda")
+    if cfg.precision not in RERANK_PRECISIONS[cfg.device]:
+        raise ValueError(f"rerank.precision {cfg.precision!r} on {cfg.device} in {path}: "
+                         f"{' or '.join(RERANK_PRECISIONS[cfg.device])} -- INT8 is "
+                         f"dynamic-quantized for CPU, fp16 needs the GPU's tensor cores")
+    if not isinstance(cfg.bucket, int) or isinstance(cfg.bucket, bool) or cfg.bucket < 0:
+        raise ValueError(f"rerank.bucket {cfg.bucket!r} in {path}: 0 or a positive int")
+    return cfg
+
+
 def load(path: str | None = None) -> Config:
     path = path or DEFAULT_CONFIG_PATH
     with open(path, "r", encoding="utf-8") as fh:
@@ -140,7 +173,7 @@ def load(path: str | None = None) -> Config:
     parse = ParseCfg(**(raw.get("parse") or {}))
     qdrant = QdrantCfg(**(raw.get("qdrant") or {}))
     ingest = IngestCfg(**(raw.get("ingest") or {}))
-    rerank = RerankCfg(**(raw.get("rerank") or {}))
+    rerank = _rerank(raw.get("rerank") or {}, path)
     server = ServerCfg(**(raw.get("server") or {}))
 
     subjects = [

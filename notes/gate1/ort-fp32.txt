@@ -1,0 +1,29 @@
+
+rerank A/B | fixture=/g/fixture.json
+  CPU baseline (timing): onnx-cpu-int8 on f6b1bd1e525a [aarch64, 10 cores], 354 ms/pair
+  reference + judge:     /g/ab/ref-fp32.json: torch fp32 on cuda [Tesla T4] (BAAI/bge-reranker-v2-m3@953dc6f6f85a)
+  candidate:             onnx fp32 model.onnx on CUDAExecutionProvider (BAAI/bge-reranker-v2-m3@953dc6f6f85a)
+  top_n=40 k=6 max_length=512 oracle_pool=80 queries=8
+  bar: top-3 ordered-identical AND top-6 Jaccard >= 0.83 vs the reference
+
+  warm-up (8 pairs, includes any lazy init): 0.65 s
+
+query                                           s  ms/pr  spdup  top3  jacc  judge    maxS
+------------------------------------------------------------------------------------------
+How do we read properties of a Teamcenter    3.01   75.4   4.6x   yes  1.00    5/5    4.13
+How to read BOM data from Teamcenter in A    3.32   83.0   4.4x   yes  1.00    3/3    4.20
+How to send an email from T4X?               3.00   75.0   4.5x   yes  1.00    4/4    2.61
+How does SAP distinguish if a BOM line wa    3.24   81.1   4.4x   yes  1.00    6/6    6.43
+How do we update basic unit of measure in    3.18   79.5   4.4x   yes  1.00    5/5    2.59
+TC_transfer_area site preference             3.64   91.0   4.6x   yes  1.00    6/6    3.81
+EPM_attach_related_objects                   2.88   72.0   4.5x   yes  1.00    3/3    5.82
+how to bake sourdough bread                  2.92   73.0   4.6x   yes  1.00    6/6   -6.09
+
+speed: 79.5 ms/pair median (4.5x the CPU baseline's 354 ms/pair)
+       => 3.18 s per search at top_n=40, 4.77 s at multi_top_n=60
+
+MATCHES the reference on all 7 real queries (top-3 identical, top-6 Jaccard >= 0.83).
+
+VERDICT: PASS
+
+wrote /g/ab/ort-fp32.json

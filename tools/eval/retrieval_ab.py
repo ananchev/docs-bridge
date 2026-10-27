@@ -105,7 +105,8 @@ def run(args) -> int:
     out = {"label": args.label, "subject": args.subject, "k": k,
            "versions": {p: version(p) for p in ("onnxruntime", "tokenizers", "numpy")},
            "rerank": {"top_n": cfg.rerank.top_n, "multi_top_n": cfg.rerank.multi_top_n,
-                      "int8": cfg.rerank.int8},
+                      "device": cfg.rerank.device, "precision": cfg.rerank.precision,
+                      "bucket": cfg.rerank.bucket},
            "summary": summarize(rows, k), "questions": rows}
     json.dump(out, open(args.out, "w"), indent=2)
     print_summary(out)

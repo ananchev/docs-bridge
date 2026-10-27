@@ -122,6 +122,11 @@ def build_app(cfg: Config):
     """Assemble the combined ASGI app: REST routes + the MCP app mounted at /mcp,
     wrapped in the bearer gate. One Searcher instance -> models loaded once."""
     searcher = Searcher(cfg)
+    if cfg.rerank.enabled:
+        # Load and run the reranker NOW: a missing model file, a second onnxruntime
+        # build or a CUDA provider that did not load stops the server here, not at
+        # the first search. The run also pays CUDA's one-off initialisation (~1 s).
+        searcher.reranker.score("startup check", ["startup check"])
     mcp = build_mcp(searcher, cfg)
     mcp_app = mcp.http_app(path="/mcp")  # Starlette app exposing MCP at /mcp
 

@@ -26,7 +26,6 @@ requires-python = ">=3.11"
 # against the stored vectors (notes/phase-a-runbook.md) before any image ships.
 dependencies = [
     "numpy==2.4.6",                     # newest line with py3.11 wheels (2.5 needs 3.12)
-    "onnxruntime==1.30.0",              # the INT8 embed + rerank runtime (and RapidOCR's)
     "tokenizers==0.23.2",               # MUST be the same in both images, or query
                                         # vectors drift from doc vectors. 0.23.2 is what
                                         # transformers 5.17 (docling's chunker) resolves.
@@ -60,6 +59,15 @@ server = [
     "fastmcp==2.14.7",                  # MCP server (streamable-http) + @mcp.tool
     "uvicorn[standard]==0.49.0",        # ASGI server for MCP + REST mirror
 ]
+
+# The onnxruntime BUILD, chosen per image, never both (plan §8 3b item 2): the two
+# install the same `onnxruntime` package dir, and with both present whichever went in
+# last runs while the other's metadata says otherwise (ort_session.py refuses that).
+#   cpu  the worker and the CPU server (INT8 on the Mac mini; RapidOCR's runtime too)
+#   gpu  the EC2 server: CUDA 13 + cuDNN 9 as nvidia-* wheels via the extras
+#        (tools/onnx-export/FINDINGS.md finding 1). Same version as cpu, always.
+cpu = ["onnxruntime==1.30.0"]
+gpu = ["onnxruntime-gpu[cuda,cudnn]==1.30.0"]
 
 # Tooling only: tools/onnx-export/ (a NEW model export, e.g. the GPU fp16 reranker).
 # Not used to build the images — their models come from the frozen models image.

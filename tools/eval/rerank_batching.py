@@ -51,9 +51,12 @@ cfg = config.load()
 fx = json.load(open(FIXTURE))
 K = fx["meta"]["default_k"]
 
+# bucket=0: this script does its own bucketing over whole-batch scoring.
 rr = OnnxReranker(
     cfg.rerank.model_dir,
-    use_int8=cfg.rerank.int8,
+    device=cfg.rerank.device,
+    precision=cfg.rerank.precision,
+    bucket=0,
     max_length=cfg.rerank.max_length,
 )
 
@@ -98,7 +101,7 @@ def topk(scores: list[float], k: int) -> list[int]:
 
 
 print(f"\nrerank batching | fixture={FIXTURE} top_n={fx['meta']['top_n']} k={K} "
-      f"max_length={cfg.rerank.max_length} int8={cfg.rerank.int8}")
+      f"max_length={cfg.rerank.max_length} {cfg.rerank.device}/{cfg.rerank.precision}")
 print(f"  queries={len(fx['queries'])} buckets={BUCKETS} repeats={REPEATS}")
 print(f"  baseline recorded in fixture: "
       f"{fx['meta']['timing']['rerank_s_mean_per_query']:.2f} s/query "

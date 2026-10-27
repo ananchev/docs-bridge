@@ -4,6 +4,7 @@ Serves three jobs with one comparison, because they ask the identical question:
   * Gate 1 §2.3 — GPU probe:            --backend torch --device cuda --precision fp16
   * Gate 1 §3   — smaller reranker:     --backend onnx --model-dir /opt/bge-reranker-base-onnx
   * Gate 2 §5.2 — reranker A/B:         the same two, on the upgraded toolchain
+  * packaging (plan §8 3b item 1):      --backend docs-bridge, inside the server image
 
 The fixture (tools/eval/dump_rerank_fixture.py) carries the queries, the real RRF
 candidate passages and the CPU-INT8 baseline scores, so this script needs NO
@@ -131,6 +132,34 @@ class OnnxScorer:
         feeds = {k: v for k, v in feeds.items() if k in self._inputs}
         logits = self.session.run(None, feeds)[0]
         return np.asarray(logits, dtype=np.float32).reshape(-1).tolist()
+
+
+class ServerScorer:
+    """The production class itself, docs_bridge.rerank.OnnxReranker, bucketing
+    included -- for the packaging check: run INSIDE the server image, it proves the
+    image's onnxruntime / CUDA libraries / model file score like the reference, which
+    the re-implemented OnnxScorer cannot (it runs wherever this script runs)."""
+
+    kind = "docs-bridge"
+
+    def __init__(self, model_dir: str, device: str, precision: str, bucket: int,
+                 max_length: int, threads: int | None) -> None:
+        from docs_bridge.rerank import OnnxReranker
+
+        self.rr = OnnxReranker(model_dir, device=device, precision=precision,
+                               bucket=bucket, max_length=max_length, threads=threads)
+        self.providers = self.rr.session.get_providers()
+        meta = json.load(open(os.path.join(model_dir, "meta.json")))
+        self.desc = (f"docs_bridge.rerank.OnnxReranker {precision} on {self.providers[0]}"
+                     f"{f' bucket={bucket}' if bucket else ''} "
+                     f"({meta['model_id']}@{str(meta['revision'])[:12]})")
+
+    def lengths(self, query: str, passages: list[str]) -> list[int]:
+        raise SystemExit("--backend docs-bridge buckets inside OnnxReranker; "
+                         "pass --bucket, it is handed to the class, not wrapped")
+
+    def score(self, query: str, passages: list[str]) -> list[float]:
+        return self.rr.score(query, passages)
 
 
 class TorchScorer:
@@ -265,7 +294,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--fixture", default=os.environ.get("AB_FIXTURE", "fixture.json"))
-    ap.add_argument("--backend", choices=["onnx", "torch", "replay"], default="onnx")
+    ap.add_argument("--backend", choices=["onnx", "docs-bridge", "torch", "replay"],
+                    default="onnx")
     ap.add_argument("--model-dir", help="onnx backend: the exported model dir")
     ap.add_argument("--model-id", default="BAAI/bge-reranker-v2-m3",
                     help="torch backend: HF model id")
@@ -311,6 +341,11 @@ def main() -> int:
         scorer = OnnxScorer(model_dir, args.precision, max_length=max_length,
                             threads=args.threads or None, device=args.device,
                             onnx_file=args.onnx_file)
+    elif args.backend == "docs-bridge":
+        if not args.model_dir:
+            raise SystemExit("--backend docs-bridge needs --model-dir")
+        scorer = ServerScorer(args.model_dir, args.device, args.precision, args.bucket,
+                              max_length, args.threads or None)
     elif args.backend == "torch":
         if not (args.revision and len(args.revision) == 40):
             raise SystemExit("--backend torch needs --revision <40-hex HF commit>")
@@ -323,7 +358,7 @@ def main() -> int:
             raise SystemExit("--bucket re-batches live scoring; a replay has none")
         scorer = ReplayScorer(args.replay, fx)
 
-    if args.bucket:
+    if args.bucket and args.backend != "docs-bridge":
         scorer = Bucketed(scorer, args.bucket)
 
     # the reference: its production scores set the bar, its pool scores make the judge

@@ -62,7 +62,9 @@ class Searcher:
 
             self._reranker = OnnxReranker(
                 self.cfg.rerank.model_dir,
-                use_int8=self.cfg.rerank.int8,
+                device=self.cfg.rerank.device,
+                precision=self.cfg.rerank.precision,
+                bucket=self.cfg.rerank.bucket,
                 max_length=self.cfg.rerank.max_length,
             )
         return self._reranker

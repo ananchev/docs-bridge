@@ -39,8 +39,12 @@ manifest_path: /data/state/manifest.sqlite
 # --- docs-bridge SERVER only (ignored by the ingest-worker) -------------------
 rerank:
   enabled: true
-  model_dir: /opt/bge-reranker-onnx   # baked INT8 cross-encoder (built on the M2)
-  int8: true
+  model_dir: /opt/bge-reranker-onnx   # from the models image (images/models/)
+  # REQUIRED, no defaults -- the server refuses to start without them:
+  device: cuda                        # cpu | cuda (cuda: CUDA provider only, no CPU fallback)
+  precision: fp16                     # cpu: int8 | fp32;  cuda: fp16 | fp32
+  bucket: 8                           # 0 = one batch; N = length-sorted sub-batches of N
+                                      # (EC2: 8; CPU INT8: 0 -- bucketing moves INT8 scores)
   max_length: 512                     # truncates each (query, passage) pair
   top_n: 30                           # rerank this many fused candidates, then cut to k
 

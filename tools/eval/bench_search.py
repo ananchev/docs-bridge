@@ -104,7 +104,8 @@ for _ in range(RUNS):
 print(f"\nquery={QUERY!r}  subject={SUBJECT}  k={K}  runs={RUNS}")
 print(
     f"config: prefetch_limit={cfg.server.prefetch_limit}  top_n={cfg.rerank.top_n}  "
-    f"rerank.enabled={cfg.rerank.enabled}  int8={cfg.rerank.int8}  "
+    f"rerank.enabled={cfg.rerank.enabled}  {cfg.rerank.device}/{cfg.rerank.precision}"
+    f"/bucket={cfg.rerank.bucket}  "
     f"max_length={cfg.rerank.max_length}"
 )
 print(f"\ncold first call (incl. model load): {cold_ms:8.1f} ms\n")

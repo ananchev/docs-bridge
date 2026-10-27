@@ -243,9 +243,11 @@ fixture = {
         "oracle_prefetch": ORACLE_PREFETCH,
         "default_k": cfg.server.default_k,
         "baseline": {
-            "kind": "onnx-cpu-int8",
+            "kind": f"onnx-{cfg.rerank.device}-{cfg.rerank.precision}",
             "model_dir": cfg.rerank.model_dir,
-            "int8": cfg.rerank.int8,
+            "device": cfg.rerank.device,
+            "precision": cfg.rerank.precision,
+            "bucket": cfg.rerank.bucket,
             "max_length": cap,
             "model_meta": rr_meta,
         },

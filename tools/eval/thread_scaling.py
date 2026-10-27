@@ -133,7 +133,8 @@ if not PAIRS:
     raise SystemExit("no candidate passages — cannot measure.")
 
 print(f"\nthread scaling | host cores={NCPU} pairs={PAIRS} "
-      f"max_length={cfg.rerank.max_length} int8={cfg.rerank.int8}")
+      f"max_length={cfg.rerank.max_length} {cfg.rerank.device}/{cfg.rerank.precision}"
+      f"/bucket={cfg.rerank.bucket}")
 print(f"  batch source: {src}")
 print(f"  query: {QUERY[:70]}")
 print(f"  sweep: {THREADS}  repeats<={REPEATS} budget={BUDGET_S:.0f}s/N")
@@ -155,7 +156,9 @@ prev_median = None
 for n in THREADS:
     rr = OnnxReranker(
         cfg.rerank.model_dir,
-        use_int8=cfg.rerank.int8,
+        device=cfg.rerank.device,
+        precision=cfg.rerank.precision,
+        bucket=cfg.rerank.bucket,
         max_length=cfg.rerank.max_length,
         threads=n,
     )
@@ -236,7 +239,8 @@ for vcpu in (4, 8, 16, 32):
 
 print("\njson: " + json.dumps({
     "host_cores": NCPU, "pairs": PAIRS, "top_n": cfg.rerank.top_n,
-    "max_length": cfg.rerank.max_length, "int8": cfg.rerank.int8,
+    "max_length": cfg.rerank.max_length, "device": cfg.rerank.device,
+    "precision": cfg.rerank.precision, "bucket": cfg.rerank.bucket,
     "knee_tol": KNEE_TOL, "C": C, "C_marginal": C_marginal,
     "best_s": best, "at_C_s": knee["median_s"],
     "rows": rows,

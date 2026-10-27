@@ -1,0 +1,35 @@
+
+rerank A/B | fixture=/g/fixture.json
+  CPU baseline (timing): onnx-cpu-int8 on f6b1bd1e525a [aarch64, 10 cores], 354 ms/pair
+  reference + judge:     /g/ab/ref-fp32.json: torch fp32 on cuda [Tesla T4] (BAAI/bge-reranker-v2-m3@953dc6f6f85a)
+  candidate:             onnx fp16 model.fp16.onnx on CUDAExecutionProvider (BAAI/bge-reranker-v2-m3@953dc6f6f85a) + length-bucketed sub-batches of 8
+  top_n=40 k=6 max_length=512 oracle_pool=80 queries=8
+  bar: top-3 ordered-identical AND top-6 Jaccard >= 0.83 vs the reference
+
+  warm-up (8 pairs, includes any lazy init): 0.28 s
+
+query                                           s  ms/pr  spdup  top3  jacc  judge    maxS
+------------------------------------------------------------------------------------------
+How do we read properties of a Teamcenter    0.32    8.0  43.2x   yes  1.00    5/5    4.13
+How to read BOM data from Teamcenter in A    0.51   12.8  28.6x   yes  1.00    3/3    4.21
+How to send an email from T4X?               0.38    9.5  35.4x   yes  1.00    4/4    2.61
+How does SAP distinguish if a BOM line wa    0.41   10.1  35.5x   yes  1.00    6/6    6.44
+How do we update basic unit of measure in    0.44   10.9  32.2x   yes  1.00    5/5    2.60
+TC_transfer_area site preference             0.35    8.6  48.0x   yes  0.71    5/6    3.81
+EPM_attach_related_objects                   0.26    6.6  49.7x   yes  1.00    3/3    5.82
+how to bake sourdough bread                  0.19    4.8  69.4x    NO  0.71    5/6   -6.09
+
+speed: 9.5 ms/pair median (35.5x the CPU baseline's 354 ms/pair)
+       => 0.38 s per search at top_n=40, 0.57 s at multi_top_n=60
+
+DIFFERS from the reference on 1/7 queries — adjudicating with the reference as a fixed judge over the deep pool:
+
+  TC_transfer_area site preference
+    top-3 identical: True  jaccard: 0.71
+    judge's global-best top-6: 6 of them in the reranked 40; candidate keeps 5/6, reference keeps 6/6
+    -> REGRESSION (reject): drops the judge's global-best ['f8791f19-0612-5db4-89f3-8e2fb2b2b96d']
+
+VERDICT: FAIL
+  - judge-confirmed regression on: TC_transfer_area site preference
+
+wrote /g/ab/ort-fp16-skipln-bucket8.json
