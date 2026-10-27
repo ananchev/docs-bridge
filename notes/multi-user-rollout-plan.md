@@ -621,6 +621,14 @@ health-check target; `/mcp` stays streamable HTTP with a bearer header.
       started with.
       **amd64 worker lock DONE 2026-10-27** (`images/ingest-worker/requirements-amd64.lock`,
       torch +cpu): the worker now has targets `runtime-service` and `runtime-cpu`.
+      **Deploy units DONE 2026-10-27** (bnl-docs-bridge `ansible/`, phases 20-60): models
+      image checked against `notes/models/<tag>.json`, Qdrant pinned by digest, the
+      embedder (fp16), the server (per-client tokens generated on the host) and the
+      worker as `docs-bridge-ingest.service`; every config key stated in the
+      inventory; images built on the host per commit. On the T4: the smoke subject
+      (this repo's `docs/`, 69 chunks) ingests in 15 s and searches at ~0.54 s
+      (`top_n` 40; 0.42 s at 30); after a Docker restart the server converges 18 s
+      later, having refused five starts until the embedder answered.
 
    **Host facts (inventory 2026-10-27):** Docker 29.8 + NVIDIA Container Toolkit 1.20
    already registered as a runtime, driver 595.91 / CUDA 13.2 (runs CUDA-12 wheels in
