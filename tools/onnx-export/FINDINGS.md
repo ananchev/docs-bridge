@@ -52,14 +52,19 @@ pinned revisions, so its export dir may live on the instance store. The sha256s 
 `meta.json` are how a rebuild proves it made the same model — a different hash is a
 different model identity, which for bge-m3 means re-embedding.
 
-### 6. ORT fp16 runs the reranker at 0.85 s/query; torch fp16 did 0.54 s — open
+### 6. ORT fp16 reranks slower than torch fp16, and attention will not fuse
 On the T4, the fixture's 40-candidate queries take 3.00 s (fp32) and 0.85 s (fp16)
-median on ORT CUDA, against Gate 1's 2.80 s / 0.54 s for torch. The plain fp16 graph
-has no fused attention or LayerNorm kernels.
-**Open:** a server-side matter (plan §8 3b item 1): `onnxruntime.transformers`'
-BERT optimizer (fused attention) on top of the fp16 graph is the candidate, measured
-with `rerank_ab.py`, and length-bucketing at 8 (Gate 1) still applies. If it changes
-the graph, the result is a new file and a new tag.
+median on ORT CUDA, against Gate 1's 2.80 s / 0.54 s for torch: the plain fp16 graph
+runs attention as separate kernels. `onnxruntime.transformers`' BERT optimizer was
+tried on 2026-10-27: on this export it fuses LayerNorm (48 SkipLayerNormalization)
+and Gelu (24) but **0 attention nodes**, for ~5% (0.84 s); exporting with
+`attn_implementation="eager"` (the classic pattern) fused no attention either; the
+optimizer OOM-kills on the 2.3 GB fp32 graph at 15 GB, so it can only run on the
+fp16 one.
+**Resolution:** production runs the plain `model.fp16.onnx`, length-bucketed at 8 —
+0.38-0.40 s/search, judged PASS against the fp32 reference (notes/gate1-runbook.md,
+"2026-10-27"). Fused attention stays an option (patching the optimizer's patterns
+for transformers 5's mask, or the torch.export exporter) for ~25% more, not needed now.
 
 ### 7. fp16 moves bge-m3's sparse weights more than its dense vector
 Dense: fp16 vs fp32 cosine ≥ 0.99985 on 256 real texts. Sparse: the per-token weight

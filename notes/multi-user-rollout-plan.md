@@ -578,6 +578,14 @@ health-check target; `/mcp` stays streamable HTTP with a bearer header.
       without an error: the server and the embedder check at startup that they got the
       CUDA provider and refuse to start otherwise. Also: exactly one of `onnxruntime` /
       `onnxruntime-gpu` may be installed (docling's OCR extras pull the CPU one).
+      **Items 1-2 DONE 2026-10-27 for the server:** `rerank.device` / `precision` /
+      `bucket` required; `ort_session.open_session` (one ORT build, CUDA only, refuses
+      a fallback); the server loads and runs the reranker at startup; Dockerfile
+      targets `runtime-cpu` / `runtime-gpu` (lock `requirements-amd64-gpu.lock`,
+      onnxruntime moved to extras `cpu` / `gpu`). In the server image, fp16 + bucket 8
+      PASSES against the fp32 reference at 0.38 s/search; started without `--gpus`,
+      onnxruntime fell back to CPU and the server refused (gate1-runbook, "2026-10-27").
+      The embedder service reuses `open_session`.
    3. *The embedder service* — fp16/fp32 exports from a pinned HF revision as a new
       `docs-bridge-models` tag, the service image, and the fingerprint extended with
       precision and execution provider.

@@ -497,3 +497,40 @@ the hardware decision).
 - **Chunking (Gate 2 input):** a 16-character heading fragment (`'Site preference.'`)
   scores +3.55 and can take a top-6 slot. That is a chunker problem, not a reranker
   one.
+
+---
+
+## 2026-10-27 — §5.5 reference and the ONNX Runtime packaging (EC2, T4)
+
+Host `bnl-docsbridge-dev-host` (g4dn.xlarge, T4, driver 595.91). Results in
+`notes/gate1/`: `ref-fp32.*`, `ort-*.*`, `server-fp16-bucket8.*`. All judged against
+`ref-fp32.json` with the fixed judge over the deep pool.
+
+**§5.5 done.** torch fp32 (`/opt/pytorch`, torch 2.12.1+cu130), `--revision 953dc6f…`,
+`--score-pool`: `SELFTEST max |candidate - reference| = 0.00e+00 => FAITHFUL` against
+the 2026-09-28 `gpu-fp32.json` — bit-identical, so it is the same reference, now with
+pool scores. **`notes/gate1/ref-fp32.json` is the canonical reference.**
+
+| Candidate (onnxruntime-gpu 1.30, CUDA provider only) | s/search (top_n=40) | Verdict |
+|---|---|---|
+| ORT fp32 `model.onnx` | 3.18 | PASS (packaging sanity) |
+| ORT fp16 `model.fp16.onnx` | 0.89 | FAIL — TC_transfer_area, see below |
+| **ORT fp16 + bucket 8** | **0.40** | **PASS** (email: duplicate swap, accepted by the judge) |
+| ORT fp16, LayerNorm/Gelu fused | 0.84 | PASS |
+| ORT fp16, LayerNorm/Gelu fused + bucket 8 | 0.38 | FAIL — TC_transfer_area |
+| **server image, `docs_bridge.rerank.OnnxReranker` fp16 bucket 8** | **0.38** | **PASS**; scores identical (max \|Δ\| 0.0) to ORT fp16 + bucket 8 |
+| *replay:* torch fp16 / + bucket 8 / + bucket 4 (Gate 1) | 0.54 / 0.29 / 0.33 | PASS / PASS / PASS |
+
+**The TC_transfer_area verdicts are tie noise, not quality.** Rank 6 there is one of
+four byte-identical 16-character `Site preference.` fragments, tied at 3.5554 in fp32;
+a 555-character Multi-Site Collaboration chunk sits ~0.005 below. Every fp16 variant
+moves the two by a few thousandths, and which one lands on top flips between
+variants with no pattern (unbucketed fails, bucketed passes; fused: the reverse). The
+bar is applied as set, so those two rows stay FAIL; the configuration chosen —
+fp16 + bucket 8, Gate 1's decision — passes, and the server image reproduces it
+exactly. The root cause is the chunker's heading fragments (Gate 2 input, above).
+
+**Decided configuration for EC2:** `rerank: {device: cuda, precision: fp16, bucket: 8}`
+on `localhost/docs-bridge-models:gpu-2026-10` — 0.38 s/search, 37x the Mac mini's
+14.2 s. Fused attention: not available on this export (tools/onnx-export/FINDINGS.md
+finding 6).
