@@ -275,6 +275,8 @@ with item 3, and took item 2 (each collection is stamped with
 `OnnxEmbedder.fingerprint` and a mismatch is refused). It stays CPU INT8 in-process;
 item 1 remains open for it. EC2 (branch `ec2-gpu`): **items 1, 2 and 4 adopted** — the
 embedder is its own service (container, movable to another instance), fp16 or fp32 on
-the GPU, and the fingerprint gains precision and execution provider. Item 3's question
+the GPU, and the fingerprint gains precision and execution provider. Items 1 and 2
+**implemented 2026-10-27** (`images/embedder/`, `embed.mode: service`); item 2's stamp
+is in the ingest manifest, checked by the worker, not yet by the server. Item 3's question
 set for the first EC2 collection (Teamcenter 14.2) is a short labelled set with the Mac
 mini's 14.2 as baseline (`multi-user-rollout-plan.md` §8 3b).

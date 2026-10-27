@@ -23,8 +23,9 @@ top k chunks + citations
 
 ### 1. Embed the query
 
-The query is embedded with `get_embedder()` — **the exact same model and backend
-the ingest-worker used**. This is what guarantees the query vector lives in the
+The query is embedded with `get_embedder()` — **the exact same model and runtime
+the ingest-worker used**: on EC2 the very same embedder service, on the CPU line the
+same frozen model in-process. This is what guarantees the query vector lives in the
 same space as the stored document vectors. There is no separate query encoder.
 
 ### 2. Hybrid retrieve + RRF fusion

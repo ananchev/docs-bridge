@@ -40,8 +40,10 @@ uvicorn) and their entrypoint.
 
 The single most important property of a RAG retriever is that **query vectors and
 document vectors live in the same space**. docs-bridge guarantees this structurally:
-the worker and the server import the same `get_embedder()` and load the same
-BGE-M3 ONNX model. There is no second embedding implementation to drift out of sync.
+the worker and the server import the same `get_embedder()`, which either calls the
+one embedder service both share (EC2) or loads the same BGE-M3 ONNX model in each
+(the CPU line). There is no second embedding implementation to drift out of sync, and
+every collection is stamped with the embedder fingerprint that filled it.
 
 The retrieve→rerank logic is likewise a single code path (`search.Searcher`) shared
 by the MCP tool and the REST endpoint, so those two surfaces cannot diverge either.
@@ -53,7 +55,9 @@ by the MCP tool and the REST endpoint, so those two surfaces cannot diverge eith
 | `config.py` | Loads and validates `config.yaml` into typed dataclasses. The whole host-portability story is config-only — nothing host-specific is baked into an image. |
 | `models.py` | Plain dataclasses shared across passes: `Subject`, `Chunk`, `DocState`, `SyncStats`. |
 | `parse.py` | **Ingest pass 1.** Scans the subject dirs (with include/exclude filters), parses each file with Docling, and emits structure-aware `Chunk`s. |
-| `embed.py` / `embed_onnx.py` | **Ingest pass 2 / query embedding.** BGE-M3 → dense + sparse vectors. `embed_onnx` is the ONNX/INT8 backend (the only one since the FlagEmbedding/torch fallback was removed, 2026-09-28); `embed` holds `get_embedder()` and the `SparseVec` container. |
+| `embed.py` / `embed_onnx.py` | **Ingest pass 2 / query embedding.** BGE-M3 → dense + sparse vectors. `embed_onnx.OnnxEmbedder` runs the model (and owns its fingerprint); `embed` holds `get_embedder()`, `ServiceEmbedder` (the embedder service's client) and the `SparseVec` container. |
+| `embed_service.py` | **The embedder service** (`docs-bridge-embedder`): `OnnxEmbedder` behind HTTP, for `embed.mode: service`. |
+| `ort_session.py` | One way to open an onnxruntime session: exactly one onnxruntime build, the CUDA provider or an error, never a CPU fallback. |
 | `manifest.py` | The SQLite manifest (persistent `docs` table for hash-delta detection) and the per-run `staged_chunks` scratch table. |
 | `qdrant_io.py` | Collection creation, idempotent upserts, doc-scoped deletes. Owns the Qdrant payload/vector layout. |
 | `sync.py` | The ingest orchestrator: scan → classify → pass 1 → pass 2. |

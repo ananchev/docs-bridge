@@ -1,6 +1,7 @@
 # Embeddings and reranking
 
-docs-bridge uses two models from the BGE family, both run on CPU:
+docs-bridge uses two models from the BGE family, each on a configured device and
+precision — INT8 on CPU (the Mac mini), fp16/fp32 on CUDA (EC2):
 
 - **BGE-M3** — the embedder. One forward pass yields a **dense** semantic vector
   *and* a **sparse** lexical vector. Used for both ingest and query embedding.
@@ -19,21 +20,43 @@ index to maintain.
 
 The dense vector is 1024-dimensional (`embedding_dim`), cosine distance.
 
-## The backend
+## Where the embedder runs
 
 `embed.get_embedder(cfg)` returns the embedder behind an `encode(texts) -> (dense,
-sparse)` contract. There is one backend, `onnx` (`embed_onnx.OnnxEmbedder`:
-onnxruntime + tokenizers, INT8 by default, ~4–5× the CPU throughput of the torch
-path it was validated against in 2026-06 at on-par retrieval quality). The
-FlagEmbedding/torch fallback was removed on 2026-09-28; its sparse vectors were in
-the **same BGE-M3 token-id space**, so corpora it embedded stay queryable.
+sparse)` contract. The model always runs in `embed_onnx.OnnxEmbedder` (onnxruntime +
+tokenizers, sessions opened by `ort_session.open_session`); `embed.mode` (required)
+says in which process:
 
-**Runtime parity.** The worker (documents) and the server (queries) must run the
-embedder on the *same* onnxruntime, tokenizers and numpy, and the same model bytes —
-or query vectors drift from stored ones. Both images install from locks that pin
-those identically (`images/lock.sh` checks it), and both copy the model from one
-frozen artifact. A runtime bump is gated by `tools/eval/embed_upgrade_parity.py`
-against the stored vectors (`notes/phase-a-runbook.md` step 4).
+- **`service`** (EC2) — the **embedder service** (`embed_service.py`, image
+  `images/embedder/`) runs it, and the worker and the server call it over HTTP
+  (`embed.ServiceEmbedder`). Model, onnxruntime and precision exist in that one
+  container, so documents and queries are embedded by one runtime by construction,
+  and the worker and server images carry no embedder and upgrade without touching
+  the vectors. The service can move to another instance: callers know only
+  `embed.url`. Over HTTP the vectors are bit-identical to an in-process run.
+- **`local`** (the CPU INT8 line) — `OnnxEmbedder` in the worker and the server
+  process. Both must then run the *same* onnxruntime, tokenizers and numpy and the
+  same model bytes, or query vectors drift from stored ones: both images install
+  from locks that pin those identically (`images/lock.sh` checks it) and copy the
+  model from one frozen artifact. A runtime bump is gated by
+  `tools/eval/embed_upgrade_parity.py` against the stored vectors
+  (`notes/phase-a-runbook.md` step 4).
+
+The FlagEmbedding/torch backend was removed on 2026-09-28; its sparse vectors were
+in the **same BGE-M3 token-id space**, so corpora it embedded stay queryable.
+
+### The fingerprint
+
+Every collection is stamped, in the manifest, with the **fingerprint** of the
+embedder that filled it (`OnnxEmbedder.fingerprint`): the model id and revision,
+the precision, the sha256 of every file that precision runs (for fp32 that includes
+the 2.3 GB `model.onnx.data`) plus the sparse head and tokenizer, the execution
+provider, and the onnxruntime build and tokenizers version. The worker refuses to
+add vectors to a collection stamped with a different fingerprint — before it deletes
+anything — so two embedders never mix in one collection; a new embedder means a new
+collection. Where `meta.json` records a file's sha256, the bytes on disk must match.
+In service mode every response carries the fingerprint's id, and a client whose
+service changed under it refuses to continue.
 
 ### How the ONNX backend stays faithful
 
@@ -48,9 +71,10 @@ so quantization never touches them:
   reimplementation of FlagEmbedding's token-weight processing, which is what
   guaranteed token-id parity with the (since removed) torch backend.
 
-The ONNX model directory the loader reads contains: `model.onnx` (+
-`model.int8.onnx`), `tokenizer.json`, `sparse_linear.npz` (the sparse head
-weights), and `meta.json`. `embedding_int8: true` selects the INT8 file.
+The ONNX model directory the loader reads holds one file set per precision —
+`model.onnx` + `model.onnx.data` (fp32), `model.fp16.onnx`, `model.int8.onnx` —
+plus `tokenizer.json`, `sparse_linear.npz` (the sparse head weights) and
+`meta.json`; the precision picks the file set.
 
 > **Tokenizer pinning matters.** The query must be tokenized exactly as the corpus
 > was, or query and document vectors drift apart. The dependency pins
@@ -59,8 +83,9 @@ weights), and `meta.json`. `embedding_int8: true` selects the INT8 file.
 
 ## The reranker
 
-`rerank.OnnxReranker` loads BGE-reranker-v2-m3 from its own baked model dir
-(`model.int8.onnx` + `tokenizer.json` + `meta.json`). It is an XLM-R
+`rerank.OnnxReranker` loads BGE-reranker-v2-m3 from its own baked model dir (the
+file for `rerank.precision` + `tokenizer.json` + `meta.json`), in the server
+process. It is an XLM-R
 sequence-classification head emitting **one relevance logit per pair**; higher means
 more relevant. The tokenizer carries the pair post-processor
 (`<s> query </s></s> passage </s>`), so the server just hands it `(query, passage)`
@@ -102,9 +127,8 @@ baking them does not break the config-only portability model.
 
 | Config | Effect |
 |---|---|
-| `embedding_backend` | `onnx` (the only backend). |
-| `embedding_int8` | ONNX only: load `model.int8.onnx` vs `model.onnx`. |
-| `onnx_model_dir` | Where the baked embedder model dir lives. |
+| `embed.mode` / `embed.url` | The embedder service, or in-process (`device`, `precision`, `model_dir`). |
 | `ingest.batch_size` | Chunks per embed batch — the main ingest memory/throughput dial. |
 | `rerank.enabled` | Turn the cross-encoder on/off (off → order by RRF score). |
-| `rerank.int8` / `rerank.model_dir` / `rerank.max_length` | Reranker backend, model dir, and pair truncation length. |
+| `rerank.device` / `rerank.precision` / `rerank.bucket` | Where and how the reranker runs (required). |
+| `rerank.model_dir` / `rerank.max_length` | Reranker model dir and pair truncation length. |

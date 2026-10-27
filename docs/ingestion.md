@@ -77,15 +77,17 @@ the two model stacks instead of their sum.
 
 ### 3. Pass 2 — embed and upsert
 
-First, stale Qdrant points are removed:
+First the embedder is reached (`get_embedder()`, per `embed.mode`) and checked
+against the collection's stamp: a collection filled by a different embedder
+fingerprint is refused here, **before anything is deleted**. Then stale Qdrant
+points are removed:
 
 - **changed** docs: their old points are deleted (by `doc_id` filter) before the
   new ones are inserted — this is also what makes a doc *shrinking* (fewer chunks)
   safe, with no need to track the old per-chunk id set.
 - **deleted** docs: their points are deleted and their manifest row is forgotten.
 
-Then the embedder is loaded (`get_embedder()` — ONNX/INT8 by default) and the
-staged chunks are drained in batches of `ingest.batch_size`. Each batch is embedded
+Then the staged chunks are drained in batches of `ingest.batch_size`. Each batch is embedded
 to dense + sparse vectors and upserted to the subject's collection. Chunks are
 drained ordered by `(doc_id, chunk_index)` so a document's chunks stay together.
 
@@ -137,10 +139,15 @@ tree can be dropped in as-is with its navigation/index pages excluded. See the
 worked example in [`config.example.yaml`](../config.example.yaml) and
 [configuration.md](configuration.md).
 
-## Known limitation: interrupted pass 2
+## Resume: an interrupted or refused pass 2
 
-If a run is killed **during pass 2** (embedding), the staged chunks and the
-provisionally-written manifest rows can be left in a split state that a plain
-re-run does not cleanly reconcile. There is no built-in resume; the practical
-recovery is to re-stage (re-run the parse for the affected docs) or embed the
-remaining staged chunks out of band. Treat a clean exit as the unit of work.
+Pass 1 records each doc in the manifest before it is embedded, so a run that stops
+in pass 2 — killed mid-drain, or refused by the embedder stamp check — leaves chunks
+staged while the manifest already holds the docs' new hashes. The next run therefore
+starts by draining whatever is still staged, before it classifies anything: it
+checks the embedder against the stamp, deletes the staged docs' points (staging holds
+each doc's complete new chunk set; Qdrant may hold its old set, or part of the new
+one), and embeds the staged chunks. No re-parse. A run refused by the stamp check
+deleted nothing, so the collection keeps serving the old chunks until a run with the
+right embedder resumes. Treat a clean exit as the unit of work all the same:
+`tools/ingest/verify-corpus.py` compares the manifest with Qdrant after a batch.

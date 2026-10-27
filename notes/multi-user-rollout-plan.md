@@ -489,9 +489,10 @@ bulk-ingest wall clock from §5.4.
 | Key | Purpose |
 |---|---|
 | `rerank.device` | `cpu` \| `cuda` |
-| `rerank.precision` | `int8` \| `fp16` |
-| `embed.url` (or similar) | address of the embedder service — server and worker |
-| `embed.device`, `embed.precision` | the embedder service's own runtime: `cuda`, `fp16` \| `fp32` |
+| `rerank.precision` | `int8` \| `fp32` on cpu, `fp16` \| `fp32` on cuda |
+| `rerank.bucket` | `0` or a sub-batch size (EC2: 8) |
+| `embed.mode`, `embed.url` | `service` + the embedder service's address — server and worker (implemented) |
+| embedder flags `--device`, `--precision`, `--model-dir`, `--host`, `--port` | the embedder service's own runtime, on its command line: `cuda`, `fp16` \| `fp32` (`images/embedder/README.md`) |
 | `rerank.threads`, `embed.threads` | per-session core budget |
 | `server.max_concurrent_searches` | semaphore permits |
 | `server.warm_on_start` | startup warm-up toggle |
@@ -512,14 +513,18 @@ health-check target; `/mcp` stays streamable HTTP with a bearer header.
 3. **Qdrant has no auth or TLS in this codebase.** `qdrant_io.py:48` is
    `QdrantClient(host=..., port=...)` — no api_key, no https parameter. Cross-instance
    traffic is unauthenticated plaintext; network isolation is the only control until
-   that is changed here.
+   that is changed here. **The embedder service likewise** (`embed_service.py`): plain
+   HTTP, no auth, and every chunk's text passes through it at ingest.
 4. **The ingest host holds state; it needs a data EBS volume.** Qdrant storage, the
    manifest and `/data/docs` are not reproducible from the AMI + Ansible. They sit on
    the root disk only while the test collection is cheap to rebuild; a separate EBS
    data volume (with snapshots) comes before anything else lands. Never the
    `/opt/dlami/nvme` instance store — wiped on every stop/start.
 5. **The embedder is a separate unit** (§6.3) — the server and the worker reach it by
-   address, so the deploy must not assume it shares a host with either.
+   address, so the deploy must not assume it shares a host with either. It must be up
+   before them: both refuse to start (the worker: refuses its run) when it does not
+   answer. A collection is stamped with its fingerprint; restarting the service on
+   another model or precision makes the worker refuse that collection.
 
 ---
 
@@ -549,7 +554,7 @@ health-check target; `/mcp` stays streamable HTTP with a bearer header.
    **3b. EC2.** Decided 2026-10-27:
    - **Ingest runs on the EC2 instance** — the corpus is embedded where it is served,
      so §1.1's cross-architecture check does not apply. Needs an amd64 worker lock
-     (`images/lock.sh` locks the worker for aarch64 only).
+     (*done 2026-10-27*, item 3 below).
    - **Embedder fp16 or fp32 on the GPU, not INT8** (§5.1 reopened → decided; which of
      the two is measured on the test collection).
    - **The embedder is its own service** — a container with the frozen model and its
@@ -598,6 +603,24 @@ health-check target; `/mcp` stays streamable HTTP with a bearer header.
       torch's 0.54 s — no fused attention yet (item 1, finding 6); fp16 moves sparse
       weights up to 0.07 of 0.38 — input to the embedder's precision (finding 7). The
       fingerprint must hash `model.onnx.data` too when the embedder runs fp32.
+      **Service DONE 2026-10-27:** `docs-bridge-embedder` (`embed_service.py`, image
+      `images/embedder/`, lock with onnxruntime-gpu and no Qdrant/Docling/torch) runs
+      bge-m3 at fp16 or fp32 on CUDA through `open_session`; the worker and the server
+      call it by `embed.mode: service` + `embed.url` (required; the old
+      `embedding_int8` / `embedding_backend` / `onnx_model_dir` refused by name). The
+      fingerprint hashes every file of the precision (fp32 incl. `model.onnx.data`)
+      and records precision, provider and the onnxruntime build. Verified on the T4:
+      service = in-process bit for bit (fp16 and fp32), a query embeds in 8-11 ms; a
+      worker (`runtime-service`, amd64 lock) ingested `docs/` through it (63 chunks,
+      15 s) and the server searched it at 0.39 s/search; an fp32 worker was refused on
+      the fp16 collection before deleting anything (that order was a bug, fixed);
+      no `--gpus`, a missing flag, or an unreachable service each refuse the start
+      (`images/embedder/FINDINGS.md`). **Open:** fp16 vs fp32 — the image ships both
+      — decided on the 14.2 question set; the server does not check the collections'
+      stamps (they live in the manifest), only that the service stays the one it
+      started with.
+      **amd64 worker lock DONE 2026-10-27** (`images/ingest-worker/requirements-amd64.lock`,
+      torch +cpu): the worker now has targets `runtime-service` and `runtime-cpu`.
 
    **Host facts (inventory 2026-10-27):** Docker 29.8 + NVIDIA Container Toolkit 1.20
    already registered as a runtime, driver 595.91 / CUDA 13.2 (runs CUDA-12 wheels in

@@ -3,7 +3,8 @@
 Two-pass, hash-delta, self-updating ingestion for docs-bridge. Parses a corpus
 with **Docling**, embeds with **BGE-M3** (dense + sparse in one pass), and upserts
 into **Qdrant** — one collection per subject. Full walkthrough in
-[`../../docs/ingestion.md`](../../docs/ingestion.md).
+[`../../docs/ingestion.md`](../../docs/ingestion.md). What was found building it:
+[FINDINGS.md](FINDINGS.md).
 
 ## What it does
 
@@ -19,6 +20,24 @@ scan disk → diff vs SQLite manifest → classify each doc:
 Docling and BGE-M3 are never resident together (peak memory is bounded by the
 larger model stack, not their sum).
 
+## Targets
+
+There is no default target; a build without `--target` fails.
+
+| Target | Arch | Embedder | Config |
+|---|---|---|---|
+| `runtime-service` | amd64 (EC2) or arm64 | none in the image — chunks go to the embedder service (`images/embedder/`) | `embed: {mode: service, url: ...}` |
+| `runtime-cpu` | arm64 (Mac mini) or amd64 | INT8 bge-m3 in-process, from the **required** build arg `MODELS_IMAGE` (`frozen-2026-09`) | `embed: {mode: local, device: cpu, precision: int8, model_dir: /opt/bge-m3-onnx}` |
+
+`TARGETARCH` picks the lock, `requirements-<arch>.lock` (`images/lock.sh`: extras
+`app` + `ingest` + `cpu`; torch from the PyTorch CPU index). Both targets carry the
+CPU onnxruntime: RapidOCR runs on it.
+
+```bash
+docker build -f images/ingest-worker/Dockerfile --target runtime-service \
+    -t localhost/ingest-worker:<commit> .
+```
+
 ## Run
 
 ```bash
@@ -26,7 +45,7 @@ larger model stack, not their sum).
 docker run --rm \
   -v /data:/data:Z \
   -v /path/to/config.yaml:/config/config.yaml:ro \
-  ingest-worker sync --subject all
+  localhost/ingest-worker:<tag> sync --subject all
 
 # one subject, verbose (idempotency check: a no-change re-sync prints 0/0/0)
 docker run --rm ... ingest-worker sync --subject aig --verbose
@@ -44,10 +63,10 @@ nothing host-specific.
 | `cli.py` | `sync --subject <name\|all>` |
 | `config.py` | load `/config/config.yaml` |
 | `parse.py` | pass 1 — Docling → structure-aware chunks (owns the Docling import) |
-| `embed.py` / `embed_onnx.py` | pass 2 — BGE-M3 dense+sparse, ONNX/INT8 (model copied from the frozen models image) |
+| `embed.py` / `embed_onnx.py` | pass 2 — BGE-M3 dense+sparse, through the embedder service or in-process (`embed.mode`) |
 | `manifest.py` | SQLite: persistent `docs` manifest + `staged_chunks` scratch |
 | `qdrant_io.py` | collection create, idempotent upsert, doc-scoped delete |
-| `sync.py` | hash-delta + two-pass orchestration |
+| `sync.py` | hash-delta + two-pass orchestration; checks the collection's embedder stamp before PASS 2 deletes anything |
 
 ## Notes
 

@@ -1,9 +1,14 @@
 # Configuration reference
 
-A single `config.yaml` is **shared by both images** and mounted at
+A single `config.yaml` is **shared by the worker and the server** and mounted at
 `/config/config.yaml` (override the path with the `DOCS_BRIDGE_CONFIG` env var).
 The ingest-worker ignores the `rerank`/`server` blocks; the server ignores the
-`parse`/`ingest` blocks. Start from [`config.example.yaml`](../config.example.yaml);
+`parse`/`ingest` blocks. The embedder service takes no config file — only flags
+([images/embedder/README.md](../images/embedder/README.md)).
+
+Keys marked **required** have no default: a config without them refuses to load,
+naming the key. Required keys are the ones that decide which model runs where, so a
+missing one never silently means "the old behaviour". Start from [`config.example.yaml`](../config.example.yaml);
 the loader and defaults live in `config.py`.
 
 Host-varying values (batch size, on-disk vectors, quantization) belong here, not in
@@ -15,12 +20,25 @@ the image — that is the whole portability model: change the config, not the co
 |---|---|---|
 | `embedding_model` | `BAAI/bge-m3` | The embedding model identity. The stack is built around BGE-M3; changing it implies re-exporting the ONNX dirs. |
 | `embedding_dim` | `1024` | Dense vector size. Must match the model and the Qdrant collection. |
-| `embedding_backend` | `onnx` | `onnx` only (`flagembedding` was removed 2026-09-28). See [embeddings.md](embeddings.md). |
-| `embedding_int8` | `true` | ONNX only: load `model.int8.onnx` vs `model.onnx`. |
-| `onnx_model_dir` | `/opt/bge-m3-onnx` | Where the baked embedder model dir lives (set by the image). |
 | `manifest_path` | `/data/state/manifest.sqlite` | The SQLite manifest + staging DB. |
 | `suffixes` | `.pdf .html .htm .md .docx .pptx` | File suffixes considered for ingest. |
 | `include` / `exclude` | `[]` | Global glob filters, unioned with each subject's own. See [filters](#file-filters). |
+
+## `embed` (worker and server) — required
+
+Where vectors come from. `embedding_backend`, `embedding_int8` and `onnx_model_dir`
+were replaced by this section and are refused by name.
+
+| Key | Default | Notes |
+|---|---|---|
+| `mode` | **required** | `service`: the embedder service at `url` (EC2) — model, device and precision are the service's own. `local`: `OnnxEmbedder` in-process (the CPU INT8 line). |
+| `url` | **required** for `service` | e.g. `http://embedder:8090`. |
+| `device` | **required** for `local` | `cpu` \| `cuda`. |
+| `precision` | **required** for `local` | `cpu`: `int8` \| `fp32`; `cuda`: `fp16` \| `fp32`. |
+| `model_dir` | **required** for `local` | The bge-m3 model dir in the image, e.g. `/opt/bge-m3-onnx`. |
+
+A key that means nothing for the mode (a `precision` with `mode: service`) is
+refused too. See [embeddings.md](embeddings.md#where-the-embedder-runs).
 
 ## `chunk` (ingest)
 
@@ -57,9 +75,11 @@ the image — that is the whole portability model: change the config, not the co
 
 | Key | Default | Notes |
 |---|---|---|
+| `device` | **required** | `cpu` \| `cuda` (CUDA provider only, never a CPU fallback). |
+| `precision` | **required** | `cpu`: `int8` \| `fp32`; `cuda`: `fp16` \| `fp32`. The old `int8` key is refused. |
+| `bucket` | **required** | `0` = one batch; `N` = length-sorted sub-batches of N (EC2: 8; CPU INT8: 0 — bucketing moves INT8 scores). |
 | `enabled` | `true` | Off → results ordered by RRF fusion score. |
-| `model_dir` | `/opt/bge-reranker-onnx` | Baked INT8 cross-encoder dir. |
-| `int8` | `true` | Load the INT8 reranker model. |
+| `model_dir` | `/opt/bge-reranker-onnx` | The cross-encoder dir in the image. |
 | `max_length` | `512` | Truncation length for each `(query, passage)` pair. |
 | `top_n` | `30` | Candidate budget for a **single-subject** search. |
 | `multi_top_n` | `60` | Candidate budget when a search **spans multiple** subjects. See [retrieval.md](retrieval.md#multi-subject-search). |
