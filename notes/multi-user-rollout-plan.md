@@ -600,7 +600,10 @@ health-check target; `/mcp` stays streamable HTTP with a bearer header.
    manifest and the documents live on the root disk. Before anything that is not
    cheaply reproducible lands there, the AWS repo adds a data EBS volume (and its
    snapshot/backup), because its README assumes the root disk holds nothing that the
-   AMI + Ansible cannot rebuild.
+   AMI + Ansible cannot rebuild. The Gate 1 rerank fixture moves there too (decided
+   2026-10-27): today it is only in `~/gate1/` on the host and on vhost2, out of git,
+   and the models build and every reranker A/B depend on it — copy it from vhost2
+   before any re-provisioning until then.
 4. **Gate 2** (§5): embed determinism, reranker A/B, first-stage sanity, cost refresh
    off the pilot library.
 5. **Gate 3** (§6): the concurrency changes, the liveness test, pool statelessness;
