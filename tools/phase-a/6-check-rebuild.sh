@@ -64,4 +64,6 @@ grep -qv ' green ' $OUT/6-counts.txt \
 sudo podman ps --format '{{.Names}}' | grep -qx docs-bridge \
   || echo "NOTE: the live server is stopped — start it after the switch-over (it serves the OLD index until then)"
 if [ "$RUN" = teamcenter-2512 ]; then finish "Next: ./7-gate.sh"
+elif [ "$NEW_CFG" = "$CFG" ]; then
+  finish "Next: sudo podman restart docs-bridge (or start) — it reads subjects at start — then sudo systemctl enable --now docs-bridge-ingest.timer"
 else finish "Next: the switch-over (with me)"; fi

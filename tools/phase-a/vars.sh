@@ -8,7 +8,8 @@ P=/data/docs-bridge-payload                           # host side of /data
 A=$HOME/phase-a                                       # everything for this run
 SRC=$A/src                                            # the repo, rsynced from mac-mini
 OUT=$A/out                                            # results; comes back to notes/phase-a/
-NEW_CFG=$A/config-rebuild.yaml                        # the rebuild's config (step 5 writes it)
+NEW_CFG=${NEW_CFG:-$A/config-rebuild.yaml}           # the rebuild's config (step 5 writes it);
+                                                      # after the switch-over 10 runs on $CFG
 NEW_MANIFEST=manifest-subject-keyed.sqlite            # under $P/state
 SUBJECTS="teamcenter-whats-new teamcenter-2512"       # rebuild order: small one first
 mkdir -p "$OUT"
