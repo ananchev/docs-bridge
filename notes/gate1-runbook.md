@@ -214,7 +214,8 @@ reference, not a new one:
 
 ```bash
 $PY rerank_ab.py --fixture fixture.json --backend torch \
-    --model-id BAAI/bge-reranker-v2-m3 --device cuda --precision fp32 \
+    --model-id BAAI/bge-reranker-v2-m3 --revision 953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e \
+    --device cuda --precision fp32 \
     --repeats 3 --score-pool --reference gpu-fp32.json --selftest \
     --json out/ref-fp32.json 2>&1 | tee out/ref-fp32.txt
 ```

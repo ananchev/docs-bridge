@@ -12,7 +12,12 @@ torch + transformers installed:
 
     python tools/eval/rerank_ab.py --fixture fixture.json \
         --backend torch --model-id BAAI/bge-reranker-v2-m3 \
+        --revision 953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e \
         --device cuda --precision fp16 --json gpu-probe.json
+
+The ONNX backend loads the dir's file for --precision (model.int8.onnx, model.onnx,
+model.fp16.onnx; --onnx-file for another) and with --device cuda requests the CUDA
+provider ONLY, refusing to run if the session fell back to CPU.
 
 The ONNX path deliberately re-implements OnnxReranker's ~15 lines instead of
 importing it, for two reasons: a probe must not require an image rebuild to try a
@@ -65,12 +70,18 @@ class OnnxScorer:
 
     kind = "onnx"
 
-    def __init__(self, model_dir: str, int8: bool, max_length: int,
-                 threads: int | None, device: str) -> None:
+    # the model dir layout of tools/onnx-export/_common.py
+    FILES = {"int8": "model.int8.onnx", "fp32": "model.onnx", "fp16": "model.fp16.onnx"}
+
+    def __init__(self, model_dir: str, precision: str, max_length: int,
+                 threads: int | None, device: str, onnx_file: str | None = None) -> None:
         import onnxruntime as ort
         from tokenizers import Tokenizer
 
-        onnx_file = "model.int8.onnx" if int8 else "model.onnx"
+        if precision not in self.FILES:
+            raise SystemExit(f"--backend onnx has no {precision} model file "
+                             f"({', '.join(self.FILES)})")
+        onnx_file = onnx_file or self.FILES[precision]
         path = os.path.join(model_dir, onnx_file)
         if not os.path.exists(path):
             raise SystemExit(f"{path} not found")
@@ -78,10 +89,16 @@ class OnnxScorer:
         if threads:
             so.intra_op_num_threads = threads
         so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        providers = (["CUDAExecutionProvider", "CPUExecutionProvider"]
-                     if device == "cuda" else ["CPUExecutionProvider"])
+        # CUDA ONLY, no CPU fallback list: a CUDA/cuDNN mismatch would otherwise run
+        # the whole graph on CPU with a warning, and time and score the wrong thing.
+        if device == "cuda" and hasattr(ort, "preload_dlls"):
+            ort.preload_dlls()  # CUDA/cuDNN from the nvidia-* wheels
+        providers = ["CUDAExecutionProvider" if device == "cuda" else "CPUExecutionProvider"]
         self.session = ort.InferenceSession(path, sess_options=so, providers=providers)
         self.providers = self.session.get_providers()
+        if self.providers[0] != providers[0]:
+            raise SystemExit(f"--device {device}: the session got {self.providers}, not "
+                             f"{providers[0]} -- refusing to measure a CPU fallback")
         self._inputs = {i.name for i in self.session.get_inputs()}
         self.tokenizer = Tokenizer.from_file(os.path.join(model_dir, "tokenizer.json"))
         self.tokenizer.enable_truncation(max_length=max_length)
@@ -94,8 +111,9 @@ class OnnxScorer:
         self._len_tok.enable_truncation(max_length=max_length)
         meta_path = os.path.join(model_dir, "meta.json")
         self.meta = json.load(open(meta_path)) if os.path.exists(meta_path) else {}
-        self.desc = (f"onnx {'int8' if int8 else 'fp32'} on {self.providers[0]} "
-                     f"({self.meta.get('model_id', model_dir)})")
+        self.desc = (f"onnx {precision} {onnx_file} on {self.providers[0]} "
+                     f"({self.meta.get('model_id', model_dir)}"
+                     f"@{str(self.meta.get('revision', '?'))[:12]})")
 
     def lengths(self, query: str, passages: list[str]) -> list[int]:
         return [len(e.ids) for e in
@@ -121,7 +139,7 @@ class TorchScorer:
 
     kind = "torch"
 
-    def __init__(self, model_id: str, device: str, precision: str,
+    def __init__(self, model_id: str, revision: str, device: str, precision: str,
                  max_length: int, threads: int | None) -> None:
         import torch
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
@@ -135,8 +153,8 @@ class TorchScorer:
             torch.set_num_threads(threads)
         self.device = device
         self.max_length = max_length
-        self.tok = AutoTokenizer.from_pretrained(model_id)
-        m = AutoModelForSequenceClassification.from_pretrained(model_id)
+        self.tok = AutoTokenizer.from_pretrained(model_id, revision=revision)
+        m = AutoModelForSequenceClassification.from_pretrained(model_id, revision=revision)
         if precision == "fp16":
             m = m.half()
         elif precision == "bf16":
@@ -144,7 +162,7 @@ class TorchScorer:
         self.model = m.to(device).eval()
         gpu = (torch.cuda.get_device_name(0) if device == "cuda"
                and torch.cuda.is_available() else platform.processor() or platform.machine())
-        self.desc = f"torch {precision} on {device} [{gpu}] ({model_id})"
+        self.desc = f"torch {precision} on {device} [{gpu}] ({model_id}@{revision[:12]})"
 
     def lengths(self, query: str, passages: list[str]) -> list[int]:
         enc = self.tok([query] * len(passages), passages, padding=False,
@@ -251,6 +269,12 @@ def main() -> int:
     ap.add_argument("--model-dir", help="onnx backend: the exported model dir")
     ap.add_argument("--model-id", default="BAAI/bge-reranker-v2-m3",
                     help="torch backend: HF model id")
+    ap.add_argument("--revision",
+                    help="torch backend, REQUIRED: the HF commit (40 hex) -- the one the "
+                         "ONNX export it is compared with was made from")
+    ap.add_argument("--onnx-file",
+                    help="onnx backend: a model file other than the precision's default "
+                         "(e.g. an optimised fp16 graph); --precision still labels it")
     ap.add_argument("--replay", help="replay backend: a saved --json run to re-judge")
     ap.add_argument("--reference",
                     help="a saved --json run to judge against (plan §2.4: the fp32 run, "
@@ -284,11 +308,13 @@ def main() -> int:
 
     if args.backend == "onnx":
         model_dir = args.model_dir or meta["baseline"]["model_dir"]
-        scorer = OnnxScorer(model_dir, int8=(args.precision == "int8"),
-                            max_length=max_length,
-                            threads=args.threads or None, device=args.device)
+        scorer = OnnxScorer(model_dir, args.precision, max_length=max_length,
+                            threads=args.threads or None, device=args.device,
+                            onnx_file=args.onnx_file)
     elif args.backend == "torch":
-        scorer = TorchScorer(args.model_id, args.device, args.precision,
+        if not (args.revision and len(args.revision) == 40):
+            raise SystemExit("--backend torch needs --revision <40-hex HF commit>")
+        scorer = TorchScorer(args.model_id, args.revision, args.device, args.precision,
                              max_length, args.threads or None)
     else:
         if not args.replay:
@@ -475,6 +501,7 @@ def main() -> int:
             "candidate": scorer.desc, "backend": args.backend,
             "device": args.device, "precision": args.precision,
             "model_dir": getattr(args, "model_dir", None), "model_id": args.model_id,
+            "revision": args.revision, "onnx_file": args.onnx_file,
             "bucket": args.bucket, "reference": ref_label,
             "host": platform.node(), "machine": platform.machine(),
             "fixture_meta": meta, "verdict": verdict, "failures": fails,
