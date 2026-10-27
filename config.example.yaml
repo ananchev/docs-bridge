@@ -23,6 +23,7 @@ chunk:
   strategy: structure_aware
 
 parse:
+  device: cpu             # REQUIRED: cpu | cuda (EC2: the runtime-gpu worker, --gpus all)
   ocr: false              # OCR (EasyOCR) is slow on CPU; needless for digital PDFs
   table_structure: true   # keep table detection (tables carry content)
 

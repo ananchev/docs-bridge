@@ -40,6 +40,7 @@ class QdrantCfg:
 
 @dataclass
 class ParseCfg:
+    device: str                    # REQUIRED: cpu | cuda -- Docling's layout + table models
     ocr: bool = False              # OCR is slow on CPU + needless for digital PDFs
     table_structure: bool = True   # keep: tables carry real content
 
@@ -151,6 +152,7 @@ def _check_unique(subjects: list[Subject], path: str) -> None:
 
 
 RERANK_REQUIRED = ("device", "precision", "bucket")
+PARSE_DEVICES = ("cpu", "cuda")
 EMBED_REQUIRED = {"service": ("url",), "local": ("device", "precision", "model_dir")}
 # Top-level keys the `embed:` section replaced; refused by name, never ignored.
 EMBED_REPLACED = ("embedding_backend", "embedding_int8", "onnx_model_dir")
@@ -184,6 +186,17 @@ def _embed(raw: dict, top: dict, path: str) -> EmbedCfg:
     return cfg
 
 
+def _parse(raw: dict, path: str) -> ParseCfg:
+    """ParseCfg from the `parse:` section. device is required: Docling's own AUTO
+    falls back to the CPU without a word when CUDA is missing, and a parse pass on the
+    wrong device is not a thing to find out from the clock."""
+    if raw.get("device") not in PARSE_DEVICES:
+        raise ValueError(f"parse.device {raw.get('device')!r} in {path}: cpu or cuda -- "
+                         f"required, no default (the device Docling's layout and table "
+                         f"models run on)")
+    return ParseCfg(**raw)
+
+
 def _rerank(raw: dict, path: str) -> RerankCfg:
     """RerankCfg from the `rerank:` section, refusing anything missing or impossible."""
     if "int8" in raw:
@@ -207,7 +220,7 @@ def load(path: str | None = None) -> Config:
         raw = yaml.safe_load(fh) or {}
 
     chunk = ChunkCfg(**(raw.get("chunk") or {}))
-    parse = ParseCfg(**(raw.get("parse") or {}))
+    parse = _parse(raw.get("parse") or {}, path)
     qdrant = QdrantCfg(**(raw.get("qdrant") or {}))
     ingest = IngestCfg(**(raw.get("ingest") or {}))
     embed = _embed(raw.get("embed") or {}, raw, path)

@@ -11,10 +11,12 @@
 # a flag, not the machine it runs on.
 #
 #   images/ingest-worker/requirements-arm64.lock  the worker on vhost2 (the Mac mini)
-#   images/ingest-worker/requirements-amd64.lock  the worker on EC2 (ingest runs on the
-#                                               instance, plan §8 3b); embeds through
+#   images/ingest-worker/requirements-amd64.lock  a CPU worker on x86_64; embeds through
 #                                               the embedder service, but RapidOCR
 #                                               needs onnxruntime (extra `cpu`)
+#   images/ingest-worker/requirements-amd64-gpu.lock  the worker on EC2 (ingest runs on
+#                                               the instance, plan §8 3b): the same, with
+#                                               torch's CUDA build from PyPI for Docling
 #   images/docs-bridge/requirements-arm64.lock  the Mac mini server (vhost2)
 #   images/docs-bridge/requirements-amd64.lock  a CPU server on x86_64
 #   images/docs-bridge/requirements-amd64-gpu.lock  the EC2 GPU server: onnxruntime-gpu
@@ -43,6 +45,10 @@ for arch in arm64:aarch64 amd64:x86_64; do
         --python-version "$PY" --python-platform "${arch#*:}-manylinux_2_28" \
         --generate-hashes -q -o "images/docs-bridge/requirements-${arch%%:*}.lock"
 done
+# PyPI, not the CPU index: torch's x86_64 wheel there is the CUDA build.
+uv pip compile pyproject.toml --extra app --extra ingest --extra cpu --python-version "$PY" \
+    --python-platform x86_64-manylinux_2_28 \
+    --generate-hashes -q -o images/ingest-worker/requirements-amd64-gpu.lock
 uv pip compile pyproject.toml --extra app --extra server --extra gpu --python-version "$PY" \
     --python-platform x86_64-manylinux_2_28 \
     --generate-hashes -q -o images/docs-bridge/requirements-amd64-gpu.lock
@@ -73,6 +79,22 @@ for lock in images/ingest-worker/requirements-{arm64,amd64}.lock; do
         echo "CUDA packages leaked into $lock (torch not from the CPU index)"; fail=1
     fi
 done
+# The GPU worker is the amd64 worker plus CUDA: torch (and torchvision) the same
+# release without +cpu, every other package at the same version, and only torch's
+# CUDA dependencies added.
+gpu_worker=images/ingest-worker/requirements-amd64-gpu.lock
+pins() { grep -E '^[a-z0-9]' "$1" | sed 's/ .*//; s/+cpu$//'; }
+extra=$(comm -13 <(pins images/ingest-worker/requirements-amd64.lock | sort) <(pins "$gpu_worker" | sort) \
+        | grep -Ev '^(nvidia-|cuda-|triton==)' || true)
+gone=$(comm -23 <(pins images/ingest-worker/requirements-amd64.lock | sort) <(pins "$gpu_worker" | sort) || true)
+if [ -n "$extra$gone" ]; then
+    echo "$gpu_worker differs from the amd64 worker beyond torch's CUDA build:"
+    echo "$extra" | sed '/^$/d; s/^/  + /'; echo "$gone" | sed '/^$/d; s/^/  - /'; fail=1
+elif ! grep -q '^nvidia-cudnn' "$gpu_worker" || grep -q '^torch==.*+cpu' "$gpu_worker"; then
+    echo "$gpu_worker has no CUDA torch"; fail=1
+else
+    echo "ok  $(grep '^torch==' "$gpu_worker" | sed 's/ .*//') (CUDA) in $gpu_worker, the rest as the amd64 worker"
+fi
 # The GPU locks (exporter, GPU server, embedder): onnxruntime-gpu ONLY -- the CPU
 # build must not sneak in beside it (plan §8 3b item 2) -- at the CPU locks' version.
 srv=$(grep "^onnxruntime==" images/docs-bridge/requirements-amd64.lock | sed 's/ .*//')

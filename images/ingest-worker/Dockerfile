@@ -5,18 +5,21 @@
 # is normalised to docker.io/library/, one `podman pull` away from being replaced by
 # a registry image.
 #
-# Two TARGETS, chosen explicitly (`--target`; a build without one fails):
-#   runtime-service  EC2 (linux/amd64; arm64 builds too): no embedder model -- chunks
-#                    are embedded by the embedder service (embed.mode: service):
-#       docker build -f images/ingest-worker/Dockerfile --target runtime-service \
-#           -t localhost/ingest-worker:<commit> .
+# Three TARGETS, chosen explicitly (`--target`; a build without one fails):
+#   runtime-gpu      EC2 (linux/amd64 only): Docling's layout and table models on
+#                    CUDA (parse.device: cuda), chunks embedded by the embedder
+#                    service (embed.mode: service); run with `--gpus all`:
+#       docker build -f images/ingest-worker/Dockerfile --target runtime-gpu \
+#           -t localhost/ingest-worker:gpu-<commit> .
+#   runtime-service  the same on the CPU (parse.device: cpu; amd64 or arm64)
 #   runtime-cpu      the INT8 embedder in-process (embed.mode: local), from the
 #                    REQUIRED build arg MODELS_IMAGE (frozen-2026-09, the bytes that
 #                    embedded the Mac mini's vectors):
 #       sudo podman build -f images/ingest-worker/Dockerfile --target runtime-cpu \
 #           --build-arg MODELS_IMAGE=localhost/docs-bridge-models:frozen-2026-09 \
 #           -t localhost/ingest-worker:<tag> .
-# TARGETARCH picks the lock (requirements-<arch>.lock).
+# TARGETARCH picks the lock (requirements-<arch>.lock); runtime-gpu has its own,
+# requirements-amd64-gpu.lock.
 #
 # LAYER ORDER keeps an app-code change a SECONDS rebuild: the heavy dependency
 # install is keyed on the lock file only, the model copy on the models image only,
@@ -70,7 +73,24 @@ COPY images/ingest-worker/requirements-${TARGETARCH}.lock ./requirements.lock
 RUN pip install --no-cache-dir --require-hashes -r requirements.lock \
         --extra-index-url https://download.pytorch.org/whl/cpu
 
-# --- runtime-service: EC2 — embeds through the embedder service ------------------
+# torch from PyPI, the CUDA 13 build, with the CUDA libraries as nvidia-* wheels --
+# no nvidia/cuda base image, like the server's runtime-gpu. Everything else is the
+# amd64 lock's versions (images/lock.sh checks it). x86_64 only.
+FROM base AS deps-gpu
+ARG TARGETARCH
+RUN [ "$TARGETARCH" = amd64 ] || { echo "runtime-gpu is linux/amd64 only" >&2; exit 1; }
+COPY images/ingest-worker/requirements-amd64-gpu.lock ./requirements.lock
+RUN pip install --no-cache-dir --require-hashes -r requirements.lock
+
+# --- runtime-gpu: EC2 — parses on CUDA, embeds through the embedder service -------
+FROM deps-gpu AS runtime-gpu
+COPY pyproject.toml ./
+COPY src ./src
+RUN pip install --no-cache-dir --no-deps .
+ENTRYPOINT ["ingest"]
+CMD ["sync", "--subject", "all"]
+
+# --- runtime-service: parses on the CPU, embeds through the embedder service ------
 # Args are the CLI: e.g. `docker run ... ingest-worker sync --subject all`
 FROM deps AS runtime-service
 COPY pyproject.toml ./
@@ -96,4 +116,4 @@ CMD ["sync", "--subject", "all"]
 
 # --- no default: a build without --target stops here -------------------------------
 FROM base AS choose-a-target
-RUN echo "build with --target runtime-service or --target runtime-cpu" >&2; exit 1
+RUN echo "build with --target runtime-gpu, runtime-service or runtime-cpu" >&2; exit 1

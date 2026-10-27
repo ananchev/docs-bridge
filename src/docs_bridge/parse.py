@@ -214,6 +214,10 @@ class Parser:
 
     def __init__(self, cfg: Config) -> None:
         from docling.chunking import HybridChunker
+        from docling.datamodel.accelerator_options import (
+            AcceleratorDevice,
+            AcceleratorOptions,
+        )
         from docling.datamodel.base_models import InputFormat
         from docling.datamodel.pipeline_options import (
             ConvertPipelineOptions,
@@ -239,6 +243,23 @@ class Parser:
         # onnxruntime — the runtime this stack already ships — not torch EasyOCR.
         # Table-structure detection stays on (tables carry content).
         pdf_opts = PdfPipelineOptions()
+        # The layout and table models on parse.device. Docling's own choice (AUTO)
+        # takes the CPU without a word when CUDA is missing -- a cuda config refuses
+        # to start instead.
+        if cfg.parse.device == "cuda":
+            import torch
+
+            if not torch.cuda.is_available():
+                raise RuntimeError(
+                    f"parse.device is cuda, but torch {torch.__version__} sees no GPU "
+                    f"(CUDA build: {torch.version.cuda}) -- the worker image is not "
+                    f"runtime-gpu, or the container was started without --gpus"
+                )
+            log.info("parse on %s (torch %s, CUDA %s)", torch.cuda.get_device_name(0),
+                     torch.__version__, torch.version.cuda)
+        pdf_opts.accelerator_options = AcceleratorOptions(
+            device=AcceleratorDevice(cfg.parse.device)
+        )
         pdf_opts.do_ocr = cfg.parse.ocr
         pdf_opts.ocr_options = RapidOcrOptions(backend="onnxruntime")
         pdf_opts.do_table_structure = cfg.parse.table_structure

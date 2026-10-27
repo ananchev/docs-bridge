@@ -52,6 +52,7 @@ refused too. See [embeddings.md](embeddings.md#where-the-embedder-runs).
 
 | Key | Default | Notes |
 |---|---|---|
+| `device` | **required** | `cpu` or `cuda`: where Docling's layout and table models run. `cuda` needs the `runtime-gpu` worker image started with `--gpus all`, and the worker refuses to start when torch sees no GPU — Docling's own automatic choice would fall back to the CPU without a word. |
 | `ocr` | `false` | RapidOCR on onnxruntime (was EasyOCR/torch before 2026-09). Selective, not per page: a page is OCR'd in full only when bitmaps cover >75% of it, otherwise only its bitmap regions. Enable for corpora with scans. |
 | `table_structure` | `true` | Keep table detection — tables carry real content. |
 

@@ -24,18 +24,24 @@ larger model stack, not their sum).
 
 There is no default target; a build without `--target` fails.
 
-| Target | Arch | Embedder | Config |
-|---|---|---|---|
-| `runtime-service` | amd64 (EC2) or arm64 | none in the image — chunks go to the embedder service (`images/embedder/`) | `embed: {mode: service, url: ...}` |
-| `runtime-cpu` | arm64 (Mac mini) or amd64 | INT8 bge-m3 in-process, from the **required** build arg `MODELS_IMAGE` (`frozen-2026-09`) | `embed: {mode: local, device: cpu, precision: int8, model_dir: /opt/bge-m3-onnx}` |
+| Target | Arch | Parses on | Embedder | Config |
+|---|---|---|---|---|
+| `runtime-gpu` | amd64 only (EC2) | CUDA — run with `--gpus all` | none in the image — chunks go to the embedder service (`images/embedder/`) | `parse: {device: cuda}`, `embed: {mode: service, url: ...}` |
+| `runtime-service` | amd64 or arm64 | CPU | the embedder service | `parse: {device: cpu}`, `embed: {mode: service, url: ...}` |
+| `runtime-cpu` | arm64 (Mac mini) or amd64 | CPU | INT8 bge-m3 in-process, from the **required** build arg `MODELS_IMAGE` (`frozen-2026-09`) | `parse: {device: cpu}`, `embed: {mode: local, device: cpu, precision: int8, model_dir: /opt/bge-m3-onnx}` |
 
 `TARGETARCH` picks the lock, `requirements-<arch>.lock` (`images/lock.sh`: extras
-`app` + `ingest` + `cpu`; torch from the PyTorch CPU index). Both targets carry the
-CPU onnxruntime: RapidOCR runs on it.
+`app` + `ingest` + `cpu`; torch from the PyTorch CPU index). `runtime-gpu` has its
+own, `requirements-amd64-gpu.lock`: the amd64 lock with torch's CUDA 13 build from
+PyPI and its `nvidia-*` libraries, nothing else changed (`lock.sh` checks it). All
+targets carry the CPU onnxruntime: RapidOCR runs on it.
+
+Only Docling's layout and table models move to the GPU. The PDF backend
+(docling-parse) and the chunker stay on the CPU.
 
 ```bash
-docker build -f images/ingest-worker/Dockerfile --target runtime-service \
-    -t localhost/ingest-worker:<commit> .
+docker build -f images/ingest-worker/Dockerfile --target runtime-gpu \
+    -t localhost/ingest-worker:gpu-<commit> .
 ```
 
 ## Run
