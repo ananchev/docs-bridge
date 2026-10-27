@@ -1,0 +1,16 @@
+# The exporter image's toolchain (images/models-export/Dockerfile). NOT a runtime set:
+# it exports models (torch -> ONNX), converts them (fp16, INT8) and checks them on the
+# GPU. Locked by images/lock.sh into requirements.lock, linux/x86_64 only -- it runs on
+# the EC2 GPU host.
+#
+# torch/transformers/tokenizers/numpy are the worker's pins; onnxruntime-gpu is the
+# server's onnxruntime version. ONLY the -gpu build: nothing here may pull the CPU
+# `onnxruntime` too (two builds in one env shadow each other -- plan §8 3b item 2).
+# 1.30.0's [cuda,cudnn] extras are CUDA 13 + cuDNN 9 wheels (tools/onnx-export/FINDINGS.md finding 1).
+torch==2.14.0
+transformers==5.17.0
+tokenizers==0.23.2
+numpy==2.4.6
+onnx==1.23.2
+onnxconverter-common==1.16.0
+onnxruntime-gpu[cuda,cudnn]==1.30.0
