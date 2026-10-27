@@ -41,10 +41,6 @@ sudo tools/onnx-export/build-gpu-models.sh --tag gpu-2026-10 \
     --work /opt/dlami/nvme/models-export --fixture /home/ubuntu/gate1/fixture.json
 ```
 
-Built so far: **`gpu-2026-10`** (2026-10-27, commit `9e162d7`) — both checks PASS;
-record in `/opt/dlami/nvme/models-export/gpu-2026-10/` (instance store: gone after a
-stop/start, the image is not).
-
 All three arguments are required. `--work` takes the HF cache, the export dirs, the
 check results and `build.log` under `<work>/<tag>/`; it can be the instance store, since
 the image is the artifact and the export is reproducible (FINDINGS 5). `--fixture` is
