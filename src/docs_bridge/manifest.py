@@ -213,6 +213,12 @@ class Manifest:
         ).fetchone()
         return int(row["n"])
 
+    def staged_doc_ids(self, subject: str) -> list[str]:
+        return [r["doc_id"] for r in self.db.execute(
+            "SELECT DISTINCT doc_id FROM staged_chunks WHERE subject = ? ORDER BY doc_id",
+            (subject,),
+        )]
+
     def iter_staged_batches(
         self, subject: str, batch_size: int
     ) -> Iterator[list[Chunk]]:

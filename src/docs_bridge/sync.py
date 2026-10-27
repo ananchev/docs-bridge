@@ -44,27 +44,31 @@ def _classify(
     return new, changed, deleted
 
 
-def _drain_staged(cfg: Config, subject: Subject, manifest: Manifest, client) -> int:
+def _stamped_embedder(cfg: Config, subject: Subject, manifest: Manifest):
+    """The configured embedder, once the collection's stamp accepts it: stamped on
+    first use, refused (manifest.EmbedderMismatchError) if a different embedder
+    filled the collection. Called BEFORE PASS 2 deletes anything, so a refused
+    embedder leaves the old points of changed docs in place."""
+    embedder = get_embedder(cfg)
+    manifest.stamp_collection(subject.collection, subject.name, embedder.fingerprint)
+    return embedder
+
+
+def _drain_staged(cfg: Config, subject: Subject, manifest: Manifest, client,
+                  embedder) -> int:
     """Embed every staged chunk for the subject and upsert it to Qdrant, then clear
     staging. This is PASS 2 *and* the resume path: point ids are deterministic, so
     re-running overwrites any partial points from an interrupted run rather than
-    duplicating them (idempotent, design §8). Returns the number of chunks embedded.
+    duplicating them (idempotent, design §8). `embedder` comes from
+    _stamped_embedder. Returns the number of chunks embedded.
     """
     staged = manifest.count_staged(subject.name)
-    if not staged:
-        return 0
-    embedder = get_embedder(cfg)
-    # Before the first upsert: stamp the collection with this embedder, or refuse
-    # if it was filled by a different one (manifest.EmbedderMismatchError).
-    manifest.stamp_collection(subject.collection, subject.name, embedder.fingerprint)
     done = 0
     for batch in manifest.iter_staged_batches(subject.name, cfg.ingest.batch_size):
         dense, sparse = embedder.encode([c.text for c in batch])
         qdrant_io.upsert(client, subject.collection, batch, dense, sparse)
         done += len(batch)
         log.debug("embedded %d / %d", done, staged)
-    del embedder
-    gc.collect()
     manifest.clear_staged(subject.name)
     return done
 
@@ -80,9 +84,18 @@ def sync_subject(
     # see those docs as unchanged and skip them, never draining the staged chunks. So
     # before classifying, drain whatever is still staged from an earlier run —
     # idempotent and with no re-parse. A clean run finds nothing staged here.
+    # The staged docs' points are deleted first: staging holds each doc's complete
+    # new chunk set, while Qdrant may still hold its old one -- a run refused by the
+    # stamp check stops before PASS 2's deletes, and one interrupted mid-drain left
+    # a part. Shrink-safe either way, and a no-op for new docs.
     if manifest.count_staged(subject.name):
         qdrant_io.ensure_collection(client, cfg, subject.collection)
-        resumed = _drain_staged(cfg, subject, manifest, client)
+        embedder = _stamped_embedder(cfg, subject, manifest)
+        for doc_id in manifest.staged_doc_ids(subject.name):
+            qdrant_io.delete_doc(client, subject.collection, doc_id)
+        resumed = _drain_staged(cfg, subject, manifest, client, embedder)
+        del embedder
+        gc.collect()
         stats.chunks_embedded += resumed
         log.info("%s: resumed %d staged chunks from an interrupted run",
                  subject.name, resumed)
@@ -127,7 +140,11 @@ def sync_subject(
         del parser
         gc.collect()  # ensure Docling is gone before BGE-M3 loads (two-pass)
 
-    # --- PASS 2: delete stale points, then embed staged ----------------------
+    # --- PASS 2: check the embedder, delete stale points, then embed staged ----
+    # The stamp check comes first: a refused embedder must not leave changed docs
+    # with their old points deleted and nothing embedded in their place.
+    embedder = (_stamped_embedder(cfg, subject, manifest)
+                if manifest.count_staged(subject.name) else None)
     # Changed docs: drop old points before re-inserting. Deleted docs: drop + forget.
     for doc_id in changed:
         qdrant_io.delete_doc(client, subject.collection, doc_id)
@@ -135,7 +152,10 @@ def sync_subject(
         qdrant_io.delete_doc(client, subject.collection, doc_id)
         manifest.delete_doc(subject.name, doc_id)
 
-    stats.chunks_embedded += _drain_staged(cfg, subject, manifest, client)
+    if embedder is not None:
+        stats.chunks_embedded += _drain_staged(cfg, subject, manifest, client, embedder)
+        del embedder
+        gc.collect()
     return stats
 
 
