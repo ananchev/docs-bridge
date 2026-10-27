@@ -92,8 +92,10 @@ for subj in cfg.subjects:
         continue
     qdrant_io.ensure_collection(client, cfg, subj.collection)
     emb = get_embedder(cfg)  # the configured embedder (embed.mode), as sync
-    with Manifest(cfg.manifest_path) as m:  # same stamp check as sync: never mix embedders
+    with Manifest(cfg.manifest_path) as m:  # as sync: stamp check, then drop the staged docs' old points
         m.stamp_collection(subj.collection, subj.name, emb.fingerprint)
+        for doc_id in m.staged_doc_ids(subj.name):
+            qdrant_io.delete_doc(client, subj.collection, doc_id)
     done = 0
     t0 = time.time()
     with Manifest(cfg.manifest_path) as m:
