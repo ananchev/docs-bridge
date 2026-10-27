@@ -3,9 +3,9 @@
 ONE retrieve->rerank path, shared by the MCP `search()` tool and the REST mirror
 (`POST /v1/search`) so they cannot diverge. Steps:
 
-  1. embed the query with the SAME ONNX/INT8 BGE-M3 as ingest (get_embedder) — this
-     is what guarantees query vectors live in the same space as the stored doc
-     vectors. No re-implementation; the embedder is the shared source of truth.
+  1. embed the query with the SAME BGE-M3 as ingest (get_embedder) — on EC2 the very
+     same embedder service the worker used, on the CPU line the same in-process
+     model — so query vectors live in the space of the stored doc vectors.
   2. hybrid retrieve from Qdrant: a dense-vector prefetch + a sparse-vector prefetch,
      fused server-side with Reciprocal Rank Fusion (design §12.4: dense+sparse in one
      model, not a separate BM25).
@@ -13,9 +13,9 @@ ONE retrieve->rerank path, shared by the MCP `search()` tool and the REST mirror
      across several pools, identical passages fold into one result (_merge_identical).
   4. return chunks with citations (source_path, section, last_updated, scores).
 
-Models are loaded LAZILY and once (design §9: "loaded once, used across all subject
-collections"): /healthz and /v1/subjects stay light, and the heavy embedder+reranker
-only load on the first real search — friendlier to the 8GB Pi.
+Models are loaded once (design §9: "loaded once, used across all subject
+collections"), on first use; server.build_app makes that first use its startup
+check, so a server that cannot embed or rerank does not start.
 """
 
 from __future__ import annotations

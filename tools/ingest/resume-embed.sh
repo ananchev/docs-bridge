@@ -91,7 +91,9 @@ for subj in cfg.subjects:
     if not n:
         continue
     qdrant_io.ensure_collection(client, cfg, subj.collection)
-    emb = get_embedder(cfg)  # same backend as sync (onnx/int8 by default)
+    emb = get_embedder(cfg)  # the configured embedder (embed.mode), as sync
+    with Manifest(cfg.manifest_path) as m:  # same stamp check as sync: never mix embedders
+        m.stamp_collection(subj.collection, subj.name, emb.fingerprint)
     done = 0
     t0 = time.time()
     with Manifest(cfg.manifest_path) as m:

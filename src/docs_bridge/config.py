@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 import yaml
 
 from .models import Subject
+from .ort_session import check_precision
 
 DEFAULT_CONFIG_PATH = os.environ.get("DOCS_BRIDGE_CONFIG", "/config/config.yaml")
 
@@ -47,6 +48,22 @@ class ParseCfg:
 class IngestCfg:
     batch_size: int = 8            # pi5: 8 (peak RAM < 8GB); macmini: 64
     two_pass: bool = True          # release Docling before loading BGE-M3
+
+
+@dataclass
+class EmbedCfg:
+    """Where vectors come from -- worker and server alike. REQUIRED (plan §8 3b: no
+    silent defaults); _embed() checks it.
+      mode: service   the embedder service (embed_service.py) at `url` -- EC2. The
+                      service owns the model, the runtime and the precision; this
+                      process holds no embedder at all.
+      mode: local     OnnxEmbedder in-process from `model_dir` on `device` at
+                      `precision` -- the CPU INT8 line (runtime-cpu images)."""
+    mode: str
+    url: str | None = None
+    device: str | None = None
+    precision: str | None = None
+    model_dir: str | None = None
 
 
 @dataclass
@@ -97,6 +114,7 @@ class Config:
     ingest: IngestCfg
     subjects: list[Subject]
     manifest_path: str
+    embed: EmbedCfg
     suffixes: set[str] = field(default_factory=lambda: set(SUPPORTED_SUFFIXES))
     # Global file filters (globs matched against the doc_id = path relative to the
     # subject dir, posix). Apply to EVERY subject and are unioned with each subject's
@@ -104,12 +122,6 @@ class Config:
     # means a file must match one); exclude = blacklist (exclude wins). See scan().
     include: list[str] = field(default_factory=list)
     exclude: list[str] = field(default_factory=list)
-    # Embedding backend: ONNX/INT8 (validated 2026-06-21 — 4.5x faster than the
-    # FlagEmbedding/torch path at on-par retrieval quality; that fallback was removed
-    # 2026-09-28). The INT8 model is baked into the image at onnx_model_dir.
-    embedding_backend: str = "onnx"        # "onnx" only
-    embedding_int8: bool = True            # onnx only: model.int8.onnx vs model.onnx
-    onnx_model_dir: str = "/opt/bge-m3-onnx"
     rerank: RerankCfg = field(default_factory=RerankCfg)    # server only
     server: ServerCfg = field(default_factory=ServerCfg)    # server only
 
@@ -139,7 +151,37 @@ def _check_unique(subjects: list[Subject], path: str) -> None:
 
 
 RERANK_REQUIRED = ("device", "precision", "bucket")
-RERANK_PRECISIONS = {"cpu": ("int8", "fp32"), "cuda": ("fp16", "fp32")}
+EMBED_REQUIRED = {"service": ("url",), "local": ("device", "precision", "model_dir")}
+# Top-level keys the `embed:` section replaced; refused by name, never ignored.
+EMBED_REPLACED = ("embedding_backend", "embedding_int8", "onnx_model_dir")
+
+
+def _embed(raw: dict, top: dict, path: str) -> EmbedCfg:
+    """EmbedCfg from the `embed:` section, refusing anything missing or impossible."""
+    old = [k for k in EMBED_REPLACED if k in top]
+    if old:
+        raise ValueError(f"{', '.join(old)} in {path} replaced by the `embed:` section "
+                         f"(mode: service + url, or mode: local + device, precision, "
+                         f"model_dir)")
+    mode = raw.get("mode")
+    if mode not in EMBED_REQUIRED:
+        got = "not set" if mode is None else repr(mode)
+        raise ValueError(f"embed.mode {got} in {path}: service (the embedder service "
+                         f"at embed.url) or local (in-process) -- required, no default")
+    missing = [k for k in EMBED_REQUIRED[mode] if raw.get(k) is None]
+    if missing:
+        raise ValueError(f"embed.{', embed.'.join(missing)} not set in {path} -- "
+                         f"required for embed.mode {mode}, no default")
+    stray = [k for k in raw if k != "mode" and k not in EMBED_REQUIRED[mode]]
+    if stray:
+        raise ValueError(f"embed.{', embed.'.join(stray)} in {path} means nothing with "
+                         f"embed.mode {mode} -- the "
+                         + ("service owns its model, device and precision"
+                            if mode == "service" else "local embedder has no url"))
+    cfg = EmbedCfg(**raw)
+    if mode == "local":
+        check_precision("embed", cfg.device, cfg.precision, path)
+    return cfg
 
 
 def _rerank(raw: dict, path: str) -> RerankCfg:
@@ -153,12 +195,7 @@ def _rerank(raw: dict, path: str) -> RerankCfg:
                          f"required, no default (device: cpu|cuda, precision: "
                          f"int8|fp32|fp16, bucket: 0 or a sub-batch size)")
     cfg = RerankCfg(**raw)
-    if cfg.device not in RERANK_PRECISIONS:
-        raise ValueError(f"rerank.device {cfg.device!r} in {path}: cpu or cuda")
-    if cfg.precision not in RERANK_PRECISIONS[cfg.device]:
-        raise ValueError(f"rerank.precision {cfg.precision!r} on {cfg.device} in {path}: "
-                         f"{' or '.join(RERANK_PRECISIONS[cfg.device])} -- INT8 is "
-                         f"dynamic-quantized for CPU, fp16 needs the GPU's tensor cores")
+    check_precision("rerank", cfg.device, cfg.precision, path)
     if not isinstance(cfg.bucket, int) or isinstance(cfg.bucket, bool) or cfg.bucket < 0:
         raise ValueError(f"rerank.bucket {cfg.bucket!r} in {path}: 0 or a positive int")
     return cfg
@@ -173,6 +210,7 @@ def load(path: str | None = None) -> Config:
     parse = ParseCfg(**(raw.get("parse") or {}))
     qdrant = QdrantCfg(**(raw.get("qdrant") or {}))
     ingest = IngestCfg(**(raw.get("ingest") or {}))
+    embed = _embed(raw.get("embed") or {}, raw, path)
     rerank = _rerank(raw.get("rerank") or {}, path)
     server = ServerCfg(**(raw.get("server") or {}))
 
@@ -206,9 +244,7 @@ def load(path: str | None = None) -> Config:
         suffixes=suffixes,
         include=list(raw.get("include") or []),
         exclude=list(raw.get("exclude") or []),
-        embedding_backend=raw.get("embedding_backend", "onnx"),
-        embedding_int8=bool(raw.get("embedding_int8", True)),
-        onnx_model_dir=raw.get("onnx_model_dir", "/opt/bge-m3-onnx"),
+        embed=embed,
         rerank=rerank,
         server=server,
     )

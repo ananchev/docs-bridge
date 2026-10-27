@@ -1,26 +1,26 @@
 """Pass 2 - embed, ONNX backend (the only backend; the FlagEmbedding/torch path it
 replaced was removed 2026-09-28).
 
-Runs the SAME BAAI/bge-m3 model as `embed.py`, but through ONNX Runtime instead
-of torch — the goal is CPU throughput (and an optional INT8 weight quantization).
-It implemented the same `encode(texts) -> (dense, sparse)` contract as the old
-torch backend, and sparse vectors land in the *same BGE-M3 token-id index space*,
-so documents embedded by either stay compatible.
+Runs BAAI/bge-m3 through ONNX Runtime at a configured device and precision, never
+defaulted: INT8 on CPU (the Mac mini line), fp16 or fp32 on CUDA (EC2, inside the
+embedder service, embed_service.py). It implements the `encode(texts) -> (dense,
+sparse)` contract of the old torch backend, and sparse vectors land in the *same
+BGE-M3 token-id index space*.
 
 Design (strategy "encoder in ONNX, heads in numpy"):
-  * The big XLM-RoBERTa encoder is exported to ONNX (and optionally INT8-quantized)
-    by tools/export_bge_m3_onnx.py — that is where the speed lives.
+  * The big XLM-RoBERTa encoder is exported to ONNX (fp32, fp16, INT8) by
+    tools/onnx-export/export_bge_m3_onnx.py — that is where the speed lives.
   * The two tiny BGE-M3 heads are applied here in numpy, full-precision, so INT8
-    never touches them:
+    and fp16 never touch them (the fp16 graph returns fp32 hidden states):
       - DENSE  = L2-normalize(last_hidden_state[:, 0])           (the [CLS] token)
       - SPARSE = relu(last_hidden_state @ sparse_linear) -> per-token weights,
                  then max-pooled per input token id (specials dropped). This is a
                  faithful reimplementation of FlagEmbedding's _process_token_weights,
                  which is what guarantees token-id parity with embed.py.
 
-The export writes a small model dir: model.onnx (+ model.int8.onnx), tokenizer.json,
-sparse_linear.npz, and meta.json. This module loads from that dir; it does NOT
-import torch or FlagEmbedding.
+The export writes a model dir (tools/onnx-export/README.md): one file set per
+precision (FILES), tokenizer.json, sparse_linear.npz and meta.json. This module
+loads from that dir; it does NOT import torch.
 """
 
 from __future__ import annotations
@@ -42,43 +42,58 @@ log = logging.getLogger(__name__)
 TOKEN_BUDGET = 32 * 512 * 512
 
 
+# The files each precision runs, as written by tools/onnx-export/ (_common.py): fp32
+# keeps its weights in an external-data file, which decides the vectors as much as
+# the graph does -- hashing model.onnx alone would fingerprint 1 MB of graph and miss
+# 2.3 GB of weights.
+FILES = {
+    "int8": ("model.int8.onnx",),
+    "fp32": ("model.onnx", "model.onnx.data"),
+    "fp16": ("model.fp16.onnx",),
+}
+HEAD_FILES = ("sparse_linear.npz", "tokenizer.json")
+
+
+def _sha256(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
 class OnnxEmbedder:
     def __init__(
         self,
         model_dir: str,
-        use_int8: bool = True,
+        device: str,
+        precision: str,
         max_length: int = 8192,
         threads: int | None = None,
     ) -> None:
-        import onnxruntime as ort
         from tokenizers import Tokenizer
 
-        meta_path = os.path.join(model_dir, "meta.json")
-        meta = json.load(open(meta_path)) if os.path.exists(meta_path) else {}
+        from .ort_session import open_session
+
+        if precision not in FILES:
+            raise ValueError(f"precision {precision!r}: expected one of {', '.join(FILES)}")
+        for f in FILES[precision] + HEAD_FILES + ("meta.json",):
+            if not os.path.exists(os.path.join(model_dir, f)):
+                raise FileNotFoundError(
+                    f"{os.path.join(model_dir, f)} not found -- the models image this "
+                    f"was built from has no {precision} embedder (images/models/README.md)"
+                )
+        self._meta = json.load(open(os.path.join(model_dir, "meta.json")))
         log.info(
-            "loading ONNX embedder from %s (int8=%s, base=%s)",
-            model_dir,
-            use_int8,
-            meta.get("model_id", "BAAI/bge-m3"),
+            "loading ONNX embedder %s (%s on %s, %s@%s)",
+            model_dir, precision, device,
+            self._meta.get("model_id"), str(self._meta.get("revision"))[:12],
         )
-
-        onnx_file = "model.int8.onnx" if use_int8 else "model.onnx"
-        onnx_path = os.path.join(model_dir, onnx_file)
         self._model_dir = model_dir
-        self._onnx_file = onnx_file
-        self._use_int8 = use_int8
-        if not os.path.exists(onnx_path):
-            raise FileNotFoundError(
-                f"{onnx_path} not found; run tools/export_bge_m3_onnx.py first "
-                f"(and pass --quantize for the int8 file)"
-            )
-
-        so = ort.SessionOptions()
-        if threads:
-            so.intra_op_num_threads = threads
-        so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        self.session = ort.InferenceSession(
-            onnx_path, sess_options=so, providers=["CPUExecutionProvider"]
+        self.device = device
+        self.precision = precision
+        self.session = open_session(
+            os.path.join(model_dir, FILES[precision][0]), device, threads
         )
         self._input_names = {i.name for i in self.session.get_inputs()}
 
@@ -108,26 +123,39 @@ class OnnxEmbedder:
 
     @cached_property
     def fingerprint(self) -> dict:
-        """What decides the vectors: the model bytes AND the runtime that runs them.
-        Phase A step 4 showed identical model bytes and tokens still move INT8 dense
-        vectors to cosine ~0.987 across onnxruntime 1.20 -> 1.30, so the runtime
-        version is part of the identity. Stamped per collection by the manifest.
-        Hashing reads ~0.6 GB, so it runs once, on first use (the ingest worker),
-        never on server startup."""
-        import onnxruntime as ort
+        """What decides the vectors: the model bytes, the precision, and the runtime
+        and execution provider that run them. Phase A step 4 showed identical model
+        bytes and tokens still move INT8 dense vectors to cosine ~0.987 across
+        onnxruntime 1.20 -> 1.30, so the runtime is part of the identity; fp16 and
+        fp32 of one model are two identities, and so are CPU and CUDA kernels.
+        Stamped per collection by the manifest (manifest.stamp_collection).
+
+        Hashes every file the precision runs plus the heads (2.3 GB for fp32), once,
+        on first use -- at the embedder service's start, or by the ingest worker in
+        local mode; never on a local-mode server's start. Where meta.json records a
+        file's sha256 (every export since tools/onnx-export/_common.py), the bytes on
+        disk must match it."""
         import tokenizers
 
+        from .ort_session import installed_build
+
+        recorded = self._meta.get("files") or {}
         files = {}
-        for f in (self._onnx_file, "sparse_linear.npz", "tokenizer.json"):
-            h = hashlib.sha256()
-            with open(os.path.join(self._model_dir, f), "rb") as fh:
-                for block in iter(lambda: fh.read(1 << 20), b""):
-                    h.update(block)
-            files[f] = h.hexdigest()[:16]
+        for f in FILES[self.precision] + HEAD_FILES:
+            files[f] = _sha256(os.path.join(self._model_dir, f))
+            want = (recorded.get(f) or {}).get("sha256")
+            if recorded and want != files[f]:
+                raise RuntimeError(
+                    f"{self._model_dir}/{f}: sha256 {files[f][:16]} on disk, meta.json "
+                    f"records {str(want)[:16]} -- not the exported model"
+                )
         return {
+            "model_id": self._meta.get("model_id"),
+            "revision": self._meta.get("revision"),
+            "precision": self.precision,
             "files": files,
-            "int8": self._use_int8,
-            "onnxruntime": ort.__version__,
+            "provider": self.session.get_providers()[0],
+            "onnxruntime": installed_build(),
             "tokenizers": tokenizers.__version__,
         }
 

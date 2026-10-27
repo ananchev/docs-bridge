@@ -39,7 +39,8 @@ def main() -> int:
     ap.add_argument("--source", required=True, help="source subject name (e.g. aig)")
     ap.add_argument("--target", required=True, help="target collection (e.g. aig_onnx)")
     ap.add_argument("--model-dir", required=True)
-    ap.add_argument("--int8", action="store_true", help="use the INT8 model (else fp32)")
+    ap.add_argument("--device", required=True, choices=["cpu", "cuda"])
+    ap.add_argument("--precision", required=True, choices=["int8", "fp16", "fp32"])
     ap.add_argument("--batch", type=int, default=64)
     ap.add_argument("--fresh", action="store_true", help="drop target first")
     ap.add_argument("--limit", type=int, default=0,
@@ -55,8 +56,9 @@ def main() -> int:
         client.delete_collection(args.target)
     qdrant_io.ensure_collection(client, cfg, args.target)  # same dim/quant as the app
 
-    emb = OnnxEmbedder(args.model_dir, use_int8=args.int8)
-    print(f"re-embedding {src} -> {args.target} (int8={args.int8}, batch={args.batch})")
+    emb = OnnxEmbedder(args.model_dir, device=args.device, precision=args.precision)
+    print(f"re-embedding {src} -> {args.target} ({args.precision} on {args.device}, "
+          f"batch={args.batch})")
 
     done = 0
     t0 = time.time()

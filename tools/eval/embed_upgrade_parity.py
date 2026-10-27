@@ -67,6 +67,17 @@ def _sha256(path: str) -> str:
     return h.hexdigest()
 
 
+def _local_embedder(cfg):
+    """The config's in-process embedder: this tool measures the runtime it runs in,
+    so it needs embed.mode local (the CPU INT8 line), not the embedder service."""
+
+    e = cfg.embed
+    if e.mode != "local":
+        raise SystemExit(f"embed.mode is {e.mode!r}: this tool runs the embedder "
+                         f"in-process and needs embed.mode local")
+    return OnnxEmbedder(e.model_dir, device=e.device, precision=e.precision)
+
+
 def _load_queries(path: str | None) -> list[str]:
     if not path:
         return []
@@ -82,7 +93,6 @@ def dump(args) -> int:
     from qdrant_client import QdrantClient, models
 
     from docs_bridge import config
-    from docs_bridge.embed_onnx import OnnxEmbedder
 
     cfg = config.load(args.config)
     client = QdrantClient(host=cfg.qdrant.host, port=cfg.qdrant.port, timeout=120)
@@ -101,9 +111,9 @@ def dump(args) -> int:
     points = [p for p in points if (p.payload or {}).get("text", "").strip()]
     print(f"[dump] {len(points)} chunks from {args.collection}", file=sys.stderr)
 
-    emb = OnnxEmbedder(cfg.onnx_model_dir, use_int8=cfg.embedding_int8)
-    model = {f: _sha256(os.path.join(cfg.onnx_model_dir, f)) for f in MODEL_FILES
-             if os.path.exists(os.path.join(cfg.onnx_model_dir, f))}
+    emb = _local_embedder(cfg)
+    model = {f: _sha256(os.path.join(cfg.embed.model_dir, f)) for f in MODEL_FILES
+             if os.path.exists(os.path.join(cfg.embed.model_dir, f))}
 
     def embed_one(text: str) -> dict:
         ids = emb.tokenizer.encode(text).ids
@@ -138,7 +148,7 @@ def dump(args) -> int:
             **{pkg: version(pkg) for pkg in ("onnxruntime", "tokenizers", "numpy",
                                              "qdrant-client")},
         },
-        "model_dir": cfg.onnx_model_dir, "int8": cfg.embedding_int8, "model": model,
+        "model_dir": cfg.embed.model_dir, "precision": cfg.embed.precision, "model": model,
         "collection": args.collection, "chunks": chunks, "queries": queries,
     }
     json.dump(out, open(args.out, "w"))
@@ -338,7 +348,6 @@ def history(args) -> int:
     from qdrant_client import QdrantClient
 
     from docs_bridge import config
-    from docs_bridge.embed_onnx import OnnxEmbedder
 
     cfg = config.load(args.config)
     client = QdrantClient(host=cfg.qdrant.host, port=cfg.qdrant.port, timeout=300)
@@ -357,8 +366,10 @@ def history(args) -> int:
           f"{sum(counts[d] for d in v)} chunks" for g, v in groups.items()),
           file=sys.stderr)
 
-    emb = OnnxEmbedder(cfg.onnx_model_dir, use_int8=cfg.embedding_int8)
-    model_sha = _sha256(os.path.join(cfg.onnx_model_dir, "model.int8.onnx"))
+    emb = _local_embedder(cfg)
+    from docs_bridge.embed_onnx import FILES
+
+    model_sha = _sha256(os.path.join(cfg.embed.model_dir, FILES[cfg.embed.precision][0]))
     rng = random.Random(args.seed)
     rows = []
     for g, docs in groups.items():

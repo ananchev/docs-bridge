@@ -7,6 +7,16 @@
 embedding_model: BAAI/bge-m3      # full-fidelity, no stand-in (design §1)
 embedding_dim: 1024               # BGE-M3 dense dim
 
+# Where vectors come from -- the worker AND the server. REQUIRED, no defaults.
+embed:
+  mode: service                     # service: the embedder service (EC2) | local: in-process
+  url: http://embedder:8090         # service only: model, device and precision are the
+                                    # service's own flags (images/embedder/README.md)
+  # mode: local                     # the CPU INT8 line instead:
+  # device: cpu                     #   cpu | cuda
+  # precision: int8                 #   cpu: int8 | fp32;  cuda: fp16 | fp32
+  # model_dir: /opt/bge-m3-onnx     #   from the models image
+
 chunk:
   target_tokens: 400
   overlap: 60

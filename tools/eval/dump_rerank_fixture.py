@@ -253,8 +253,7 @@ fixture = {
         },
         "embedder": {
             "model": cfg.embedding_model,
-            "backend": getattr(cfg, "embedding_backend", None),
-            "int8": getattr(cfg, "embedding_int8", None),
+            "embed": vars(cfg.embed),
             "mean_ms": sum(embed_ms) / len(embed_ms) if embed_ms else None,
         },
         "timing": {

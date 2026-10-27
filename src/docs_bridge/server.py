@@ -122,6 +122,10 @@ def build_app(cfg: Config):
     """Assemble the combined ASGI app: REST routes + the MCP app mounted at /mcp,
     wrapped in the bearer gate. One Searcher instance -> models loaded once."""
     searcher = Searcher(cfg)
+    # Reach the embedder NOW (embed.mode service: fetch the service's fingerprint;
+    # local: load the model) and embed once: an unreachable service, a missing model
+    # or a failed provider stops the server here, not at the first search.
+    searcher.embedder.encode(["startup check"])
     if cfg.rerank.enabled:
         # Load and run the reranker NOW: a missing model file, a second onnxruntime
         # build or a CUDA provider that did not load stops the server here, not at

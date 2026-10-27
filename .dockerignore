@@ -1,4 +1,4 @@
-# Build context is the REPO ROOT for ingest-worker, docs-bridge and models-export,
+# Build context is the REPO ROOT for ingest-worker, docs-bridge, embedder and models-export,
 # so keep it lean — the Dockerfiles only COPY pyproject.toml, src/, the locks.
 .git/
 **/__pycache__/
@@ -11,7 +11,8 @@ venv/
 *.md
 images/
 # ...except the dependency locks the Dockerfiles install (images/lock.sh)
-!images/ingest-worker/requirements.lock
+!images/ingest-worker/requirements-*.lock
+!images/embedder/requirements.lock
 !images/docs-bridge/requirements-*.lock
 !images/models-export/requirements.lock
 provisioning/
