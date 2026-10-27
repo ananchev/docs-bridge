@@ -114,6 +114,23 @@ class Config:
         raise KeyError(f"unknown subject {name!r}; configured subjects: {known}")
 
 
+def _check_unique(subjects: list[Subject], path: str) -> None:
+    """One name and one collection per subject. Two subjects MAY share a dir (each
+    picks its files with include/exclude), but never a collection: a collection is
+    the unit stamped with one embedder fingerprint (manifest `collections`), and a
+    doc-scoped delete in a shared collection would hit the other subject's points."""
+    for attr in ("name", "collection"):
+        seen: dict[str, str] = {}
+        for s in subjects:
+            v = getattr(s, attr)
+            if v in seen:
+                raise ValueError(
+                    f"subjects {seen[v]!r} and {s.name!r} share {attr} {v!r} in {path}; "
+                    f"each subject needs its own {attr}"
+                )
+            seen[v] = s.name
+
+
 def load(path: str | None = None) -> Config:
     path = path or DEFAULT_CONFIG_PATH
     with open(path, "r", encoding="utf-8") as fh:
@@ -139,6 +156,7 @@ def load(path: str | None = None) -> Config:
     ]
     if not subjects:
         raise ValueError(f"no subjects configured in {path}")
+    _check_unique(subjects, path)
 
     suffixes = raw.get("suffixes")
     suffixes = {s.lower() for s in suffixes} if suffixes else set(SUPPORTED_SUFFIXES)

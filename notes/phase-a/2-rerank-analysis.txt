@@ -1,0 +1,9 @@
+vs fp32, 8 queries x 40 pairs      old runtime   new runtime
+  mean |d|                             0.260         0.250
+  max |d|                              1.031         1.066
+  p95 |d|                              0.725         1.009
+  top-6 in fp32's order                  2/8           2/8
+  top-6 overlap (mean)                 0.866         0.866
+  same #1 as fp32                        6/8           6/8
+  controls abstain                      True          True
+VERDICT: PASS

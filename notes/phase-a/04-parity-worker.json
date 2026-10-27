@@ -1,0 +1,68 @@
+{
+  "verdict": "FAIL",
+  "failures": [
+    "old-vs-new dense cosine min 0.979224 < 0.999"
+  ],
+  "runtime": {
+    "old": {
+      "python": "3.11.16",
+      "machine": "aarch64",
+      "onnxruntime": "1.20.1",
+      "tokenizers": "0.19.1",
+      "numpy": "1.26.4",
+      "qdrant-client": "1.12.1"
+    },
+    "new": {
+      "python": "3.11.16",
+      "machine": "aarch64",
+      "onnxruntime": "1.30.0",
+      "tokenizers": "0.23.2",
+      "numpy": "2.4.6",
+      "qdrant-client": "1.12.1"
+    }
+  },
+  "same_model": true,
+  "model": {
+    "model.int8.onnx": "68086607db73f9c336bbaced6dfe8543cdbc15a34681bf25bc678e930c2ad3d2",
+    "sparse_linear.npz": "31eec453b1bed92daefc6f5df8f0bf7c32361285a1a5d977004cd88bf2362fa2",
+    "tokenizer.json": "249df0778f236f6ece390de0de746838ef25b9d6954b68c2ee71249e0a9d8fd4",
+    "meta.json": "8ead5c66de367d5ef4154f2b0a46bc773a147ad84dc0e976a025ba5d884872b0"
+  },
+  "token_mismatches": [],
+  "old_vs_new": {
+    "dense": {
+      "n": 445,
+      "mean": 0.986693972175178,
+      "min": 0.97922371882367
+    },
+    "sparse_jaccard": {
+      "n": 445,
+      "mean": 0.9619778304631001,
+      "min": 0.6987951807228916
+    }
+  },
+  "vs_stored": {
+    "old_dense": {
+      "n": 400,
+      "mean": 0.9820613293494074,
+      "min": 0.9690769302355716
+    },
+    "new_dense": {
+      "n": 400,
+      "mean": 0.9820598319701044,
+      "min": 0.9713740741659002
+    },
+    "old_sparse_jaccard": {
+      "n": 400,
+      "mean": 0.9605193202394545,
+      "min": 0.7402597402597403
+    },
+    "new_sparse_jaccard": {
+      "n": 400,
+      "mean": 0.9584315137112818,
+      "min": 0.7530864197530864
+    }
+  },
+  "n_chunks": 400,
+  "n_questions": 45
+}

@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Step 7 (runbook step 6): THE GATE. The 45 questions through the real search, old
+# image + old `teamcenter` vs new image + teamcenter-2512, each a single pool with the
+# same rerank budget. ~25 min; one image at a time (RAM).
+set -uo pipefail
+. "$(dirname "$0")/vars.sh"
+cd "$SRC"
+Q=notes/gate2/questions-teamcenter.yaml
+
+drafts=$(grep -c 'status: draft' $Q || true)
+[ "$drafts" = 0 ] || echo "NOTE: $drafts questions still have draft labels — the verdict is only as good as the labels."
+
+say "flattened labels"
+sed 's#doc: "Siemens/Teamcenter 2512/#doc: "#' $Q > notes/gate2/questions-teamcenter-flat.yaml
+[ "$(grep -c 'doc: "Siemens' notes/gate2/questions-teamcenter-flat.yaml)" = 0 ] && ok "labels flattened" || bad "labels"
+# The new side searches teamcenter-2512 ALONE. Every label points at a 2512 doc, and a
+# single pool gets the full rerank budget (top_n) like the old side's single pool —
+# 2026-10-15's two-pool gate (2512 + whats-new) split that budget round-robin, half of
+# it to the 1.6k-chunk what's-new pool, and missed answers that were in the index.
+
+rab_run() {  # $1 image  $2 label  $3 config  $4 subject(s)  $5 questions file
+  sudo podman run --rm -i --network docs-bridge-net \
+    -v $3:/config/config.yaml:ro,z -v $OUT:/out:z -v $SRC/notes/gate2:/q:ro,z \
+    --entrypoint python $1 - run --questions /q/$5 \
+    --subject $4 --label $2 --out /out/7-retrieval-$2.json \
+    < tools/eval/retrieval_ab.py > $OUT/7-retrieval-$2.txt 2>&1
+  tail -6 $OUT/7-retrieval-$2.txt
+}
+say "old: live image, old collection (~12 min)"
+rab_run $OLD_SERVER old $CFG teamcenter questions-teamcenter.yaml
+say "new: new image, rebuilt collections (~12 min)"
+rab_run localhost/docs-bridge:$NEW new $NEW_CFG teamcenter-2512 \
+  questions-teamcenter-flat.yaml
+
+say "compare"
+python3 tools/eval/retrieval_ab.py compare --old $OUT/7-retrieval-old.json \
+  --new $OUT/7-retrieval-new.json --json $OUT/7-compare.json | tee $OUT/7-compare.txt
+{ date; free -m; } >> $OUT/5-ram.txt
+grep -q 'VERDICT: PASS' $OUT/7-compare.txt && ok "PASS" \
+  || bad "not PASS — a MISS may be a stale label (docling 2.130 parsed the text differently); I check each"
+echo "(ignore the top-k overlap figure: the re-parse changed every chunk id)"
+sudo podman ps --format '{{.Names}}' | grep -qx docs-bridge \
+  || echo "REMINDER: the live server is stopped — start it again: sudo podman start docs-bridge"
+finish "Send me $OUT (rsync -a --exclude '*.tar' vhost2:phase-a/out/ notes/phase-a/) — then the switch-over."

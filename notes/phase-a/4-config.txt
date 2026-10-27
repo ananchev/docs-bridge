@@ -1,0 +1,2 @@
+20:manifest_path: /data/state/manifest-subject-keyed.sqlite
+old teamcenter: 14075 docs | new: 2512 14065 + whats-new 9 + 1 dropped duplicate = 14075

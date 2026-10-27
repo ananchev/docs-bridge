@@ -1,0 +1,7 @@
+total 1056
+drwxr-xr-x. 1 ananchev ananchev    438 Oct 14 22:30 .
+drwxr-xr-x. 1 ananchev ananchev     28 Oct 14 22:30 ..
+-rw-r--r--. 1 ananchev ananchev  37421 Oct 14 22:30 soa-libs-index.md
+-rw-r--r--. 1 ananchev ananchev 341513 Oct 14 22:30 Subscription Management.pdf
+-rw-r--r--. 1 ananchev ananchev 345379 Oct 14 22:30 Teamcenter Gateway for Enterprise Applications - RAC GUI Preference Example Collection.pdf
+-rw-r--r--. 1 ananchev ananchev 346009 Oct 14 22:30 Teamcenter Gateway for SAP Business Suite - RAC GUI Preference Example Collection.pdf

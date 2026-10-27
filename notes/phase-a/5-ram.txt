@@ -1,0 +1,164 @@
+Wed Oct 14 11:06:53 PM CEST 2026
+Mem:           15675        8158        7162           4        1509        7516
+qdrant 324.9MB / 16.44GB
+librechat-mongodb 50.27MB / 16.44GB
+librechat-meilisearch 25.66MB / 16.44GB
+librechat 207.7MB / 16.44GB
+docs-bridge 4.852GB / 16.44GB
+containers-backup-node 14.5MB / 16.44GB
+rebuild-teamcenter-2512 23.13MB / 16.44GB
+Wed Oct 14 11:16:53 PM CEST 2026
+Mem:           15675       12770        1114           4        2950        2905
+qdrant 340.8MB / 16.44GB
+librechat-mongodb 66.85MB / 16.44GB
+librechat-meilisearch 25.66MB / 16.44GB
+librechat 214.3MB / 16.44GB
+docs-bridge 4.852GB / 16.44GB
+containers-backup-node 14.5MB / 16.44GB
+rebuild-teamcenter-2512 4.552GB / 16.44GB
+Wed Oct 14 11:26:53 PM CEST 2026
+Mem:           15675       13003        1471           4        2361        2672
+qdrant 353.9MB / 16.44GB
+librechat-mongodb 69.06MB / 16.44GB
+librechat-meilisearch 25.66MB / 16.44GB
+librechat 210.4MB / 16.44GB
+docs-bridge 4.815GB / 16.44GB
+containers-backup-node 14.5MB / 16.44GB
+rebuild-teamcenter-2512 4.761GB / 16.44GB
+Wed Oct 14 11:36:53 PM CEST 2026
+Mem:           15675       13285        1195           4        2353        2390
+qdrant 350MB / 16.44GB
+librechat-mongodb 67.14MB / 16.44GB
+librechat-meilisearch 25.66MB / 16.44GB
+librechat 209.2MB / 16.44GB
+docs-bridge 4.815GB / 16.44GB
+containers-backup-node 14.5MB / 16.44GB
+rebuild-teamcenter-2512 4.482GB / 16.44GB
+Wed Oct 14 11:46:53 PM CEST 2026
+Mem:           15675       12957        1473           4        2404        2718
+qdrant 351.4MB / 16.44GB
+librechat-mongodb 66.08MB / 16.44GB
+librechat-meilisearch 25.66MB / 16.44GB
+librechat 213.9MB / 16.44GB
+docs-bridge 4.816GB / 16.44GB
+containers-backup-node 14.5MB / 16.44GB
+rebuild-teamcenter-2512 3.887GB / 16.44GB
+Wed Oct 14 11:56:53 PM CEST 2026
+Mem:           15675       13079        1331           4        2424        2596
+qdrant 352.1MB / 16.44GB
+librechat-mongodb 70.19MB / 16.44GB
+librechat-meilisearch 25.66MB / 16.44GB
+librechat 213.4MB / 16.44GB
+docs-bridge 4.817GB / 16.44GB
+containers-backup-node 14.5MB / 16.44GB
+rebuild-teamcenter-2512 4.734GB / 16.44GB
+Thu Oct 15 12:06:53 AM CEST 2026
+Mem:           15675       13439        1076           4        2318        2235
+qdrant 349.1MB / 16.44GB
+librechat-mongodb 68.27MB / 16.44GB
+librechat-meilisearch 25.66MB / 16.44GB
+librechat 215.5MB / 16.44GB
+docs-bridge 4.807GB / 16.44GB
+containers-backup-node 14.5MB / 16.44GB
+rebuild-teamcenter-2512 4.599GB / 16.44GB
+Thu Oct 15 12:16:53 AM CEST 2026
+Mem:           15675       13682        1371           4        1779        1992
+qdrant 257.8MB / 16.44GB
+librechat-mongodb 79.79MB / 16.44GB
+librechat-meilisearch 25.38MB / 16.44GB
+librechat 190.5MB / 16.44GB
+docs-bridge 4.564GB / 16.44GB
+containers-backup-node 14.68MB / 16.44GB
+rebuild-teamcenter-2512 5.498GB / 16.44GB
+Thu Oct 15 12:26:53 AM CEST 2026
+Mem:           15675       14062        1289           4        1481        1613
+qdrant 278.1MB / 16.44GB
+librechat-mongodb 67.72MB / 16.44GB
+librechat-meilisearch 25.44MB / 16.44GB
+librechat 197.6MB / 16.44GB
+docs-bridge 4.563GB / 16.44GB
+containers-backup-node 8.946MB / 16.44GB
+rebuild-teamcenter-2512 5.153GB / 16.44GB
+Thu Oct 15 12:36:53 AM CEST 2026
+Mem:           15675       13379        1940           4        1512        2295
+qdrant 278.6MB / 16.44GB
+librechat-mongodb 73.19MB / 16.44GB
+librechat-meilisearch 25.44MB / 16.44GB
+librechat 200.6MB / 16.44GB
+docs-bridge 4.565GB / 16.44GB
+containers-backup-node 8.946MB / 16.44GB
+rebuild-teamcenter-2512 4.528GB / 16.44GB
+Thu Oct 15 12:46:53 AM CEST 2026
+Mem:           15675       13013        2262           4        1556        2661
+qdrant 279.8MB / 16.44GB
+librechat-mongodb 78.36MB / 16.44GB
+librechat-meilisearch 25.44MB / 16.44GB
+librechat 202.2MB / 16.44GB
+docs-bridge 4.564GB / 16.44GB
+containers-backup-node 8.946MB / 16.44GB
+rebuild-teamcenter-2512 4.751GB / 16.44GB
+Thu Oct 15 12:56:54 AM CEST 2026
+Mem:           15675       10150        2111           4        4571        5524
+qdrant 275.6MB / 16.44GB
+librechat-mongodb 74.06MB / 16.44GB
+librechat-meilisearch 25.44MB / 16.44GB
+librechat 200.8MB / 16.44GB
+docs-bridge 4.564GB / 16.44GB
+containers-backup-node 8.946MB / 16.44GB
+rebuild-teamcenter-2512 2.559GB / 16.44GB
+Thu Oct 15 01:06:54 AM CEST 2026
+Mem:           15675       12780         556           4        3496        2895
+qdrant 284MB / 16.44GB
+librechat-mongodb 85.16MB / 16.44GB
+librechat-meilisearch 25.44MB / 16.44GB
+librechat 204MB / 16.44GB
+docs-bridge 4.566GB / 16.44GB
+containers-backup-node 9.994MB / 16.44GB
+rebuild-teamcenter-2512 5.167GB / 16.44GB
+Thu Oct 15 01:16:54 AM CEST 2026
+Mem:           15675       14739         864           4        1206         936
+qdrant 278.4MB / 16.44GB
+librechat-mongodb 66.16MB / 16.44GB
+librechat-meilisearch 27.28MB / 16.44GB
+librechat 207MB / 16.44GB
+docs-bridge 4.563GB / 16.44GB
+containers-backup-node 8.946MB / 16.44GB
+rebuild-teamcenter-2512 6.944GB / 16.44GB
+Thu Oct 15 01:26:54 AM CEST 2026
+Mem:           15675       13003        2551           4        1277        2672
+qdrant 287.6MB / 16.44GB
+librechat-mongodb 67.26MB / 16.44GB
+librechat-meilisearch 27.28MB / 16.44GB
+librechat 208.4MB / 16.44GB
+docs-bridge 4.563GB / 16.44GB
+containers-backup-node 8.946MB / 16.44GB
+rebuild-teamcenter-2512 5.566GB / 16.44GB
+Thu Oct 15 01:36:54 AM CEST 2026
+Mem:           15675       13060        2444           4        1327        2615
+qdrant 284.7MB / 16.44GB
+librechat-mongodb 67.29MB / 16.44GB
+librechat-meilisearch 27.28MB / 16.44GB
+librechat 204.2MB / 16.44GB
+docs-bridge 4.563GB / 16.44GB
+containers-backup-node 8.946MB / 16.44GB
+rebuild-teamcenter-2512 5.132GB / 16.44GB
+Thu Oct 15 01:46:54 AM CEST 2026
+Mem:           15675       12533        2919           4        1379        3141
+qdrant 287MB / 16.44GB
+librechat-mongodb 66.17MB / 16.44GB
+librechat-meilisearch 27.28MB / 16.44GB
+librechat 206.5MB / 16.44GB
+docs-bridge 4.563GB / 16.44GB
+containers-backup-node 8.946MB / 16.44GB
+rebuild-teamcenter-2512 4.405GB / 16.44GB
+Thu Oct 15 01:56:54 AM CEST 2026
+               total        used        free      shared  buff/cache   available
+Mem:           15675        9681        6241           4         566        5993
+Swap:           8191        8190           1
+ID            NAME                    CPU %       MEM USAGE / LIMIT  MEM %       NET IO             BLOCK IO           PIDS        CPU TIME          AVG CPU %
+c7256b5d0d99  qdrant                  0.06%       284.1MB / 16.44GB  1.73%       3.314GB / 91.41GB  26.38GB / 168GB    54          1h27m23.813001s   0.06%
+2e681aefda56  librechat-mongodb       0.40%       77.19MB / 16.44GB  0.47%       350.1MB / 834.6MB  900.8MB / 59.43GB  52          10h24m16.952285s  0.40%
+d82baabbd568  librechat-meilisearch   0.06%       45.96MB / 16.44GB  0.28%       2.273MB / 436.4kB  189.5MB / 322.7MB  29          1h39m49.045207s   0.06%
+9ccac828fc3e  librechat               0.06%       310.4MB / 16.44GB  1.89%       1.122GB / 634.9MB  575.5MB / 268.1MB  29          1h31m24.474055s   0.06%
+e6c568664ccd  docs-bridge             1.52%       6.989GB / 16.44GB  42.52%      38.25MB / 69.56MB  942.4MB / 6.704GB  55          10h20m5.831605s   1.52%
+0117c6d2fc94  containers-backup-node  0.01%       5.456MB / 16.44GB  0.03%       14.67MB / 229.3MB  68.71MB / 39.65MB  393         7m8.408267s       0.01%

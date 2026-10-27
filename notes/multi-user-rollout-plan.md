@@ -96,10 +96,15 @@ Both are required in the end; neither is the other's fallback.
 
 | | Mac mini (vhost2) | AWS GPU (EC2) |
 |---|---|---|
-| Corpus | existing `teamcenter` (138k chunks, **old toolchain**) — stays | new work-archive corpus (SKF/HxGN, **new toolchain**) |
-| Ingested on | vhost2 | vhost2 (`work-archive-ingest-plan.md`), served from x86 |
+| Corpus | existing `teamcenter` (138k chunks, **old toolchain**) — stays | new work-archive corpus (SKF/HxGN, **new toolchain**); first a Teamcenter 14.2 test collection (§8 3b) |
+| Ingested on | vhost2 | **the EC2 instance itself** (decided 2026-10-27) |
+| Embedder | CPU, dynamic INT8 | **GPU, fp16 or fp32, as its own service** (decided 2026-10-27) |
 | Reranker | CPU, dynamic INT8, `threads` tuned — **unchanged** | CUDA, fp16, length-bucketed at 8 |
-| Quality check | **old vs new image on the same `teamcenter`** (chunk-ID comparable), fp32 judge | absolute: labelled work-archive questions + fp16-vs-fp32 numerics |
+| Quality check | **old vs new image on the same `teamcenter`** (chunk-ID comparable), fp32 judge | absolute: labelled questions per corpus + fp16-vs-fp32 numerics; for the 14.2 test collection, the Mac mini's 14.2 as baseline |
+
+*The rows above were the 2026-09-28 starting point; the Mac mini rebuilt from scratch in
+October (§8 step 3) and the EC2 column is as decided on 2026-10-27. The text below is
+kept as the reasoning of the time.*
 
 One codebase: the targets differ only in reranker runtime and config
 (`rerank.device` / `rerank.precision`, §6.3), never in the embedder. Consequences:
@@ -114,11 +119,9 @@ One codebase: the targets differ only in reranker runtime and config
 **Update 2026-09-29 (user): the Mac mini's ingest and database are never reused on
 EC2 — EC2 gets its own ingest and its own collections.** Nothing embedded for
 `teamcenter` is ever served from EC2, and no EC2 decision is constrained by the Mac
-mini's stored vectors. Open: *where* EC2's corpus is embedded. If on EC2 itself (or any
-x86 host), the cross-architecture bullet above no longer applies; if still on vhost2,
-it stays blocking — and Phase A step 4 suggests it would fail a 0.999 bar the same way
-(dynamic-INT8 kernels differ between onnxruntime builds, and aarch64 vs x86 run
-different kernels).
+mini's stored vectors. ~~Open: *where* EC2's corpus is embedded.~~ **Decided
+2026-10-27: on the EC2 instance**, so the cross-architecture bullet above no longer
+applies.
 
 Also from Phase A (2026-09-29): an onnxruntime upgrade alone moved the INT8 embedder's
 vectors to cosine ~0.98 with identical model bytes and tokens, so "never in the
@@ -365,9 +368,10 @@ surface.
 > from a GPU, so an fp16 (or fp32) embedder is cheap there — at ingest, where a GPU
 > turns the CPU's ~0.34 s/chunk into a fraction of it, and for any later re-embed.
 > Expected to be far less runtime-sensitive than INT8; to be measured, not assumed.
-> Proposed, not decided: `stack-upgrade-strategy.md` §7 (items 1, 2, 4). And the
-> 0.999 bar here should be read as the diagnostic, with retrieval on the work-archive
-> questions as the gate (§7 item 3).
+> `stack-upgrade-strategy.md` §7 (items 1, 2, 4). And the 0.999 bar here should be
+> read as the diagnostic, with retrieval on labelled questions as the gate (§7 item 3).
+> **Decided 2026-10-27: EC2's embedder runs fp16 or fp32 on the GPU, as its own
+> service** (§8 3b); which precision is measured on the 14.2 test collection.
 
 ### 5.2 Reranker A/B (blocking for the GPU path)
 
@@ -444,12 +448,13 @@ sessions pin to one process and a round-robin pool breaks.
 | Item | Effort | Note |
 |---|---|---|
 | fp16 export mode | ~15 lines | Mirror `--quantize-only` in `export_bge_reranker_onnx.py` using `onnxconverter_common.float16`. 568M × 2B ≈ 1.1 GB — under the 2 GB protobuf limit, so it stays a single self-contained file and avoids the external-data blob that once bloated the image to 4.9 GB. |
-| Provider + config keys | trivial | `providers=["CUDAExecutionProvider","CPUExecutionProvider"]` plus `rerank.device` / `rerank.precision`, so **one image still runs CPU-only**. Keeps vhost2 working and preserves a CPU fallback. |
+| Provider + config keys | trivial | `rerank.device` / `rerank.precision`, both **required** (no default, §8 3b). `cuda` requests `CUDAExecutionProvider` only, and startup fails unless the session really got it — no CPU fallback list, which is exactly what hides a CUDA/cuDNN mismatch. `cpu` keeps a CPU-only run possible, chosen explicitly. |
 | CUDA base image | **~1 day — the real work** | Prefer keeping `python:3.11-slim-bookworm` and pulling CUDA in as pip wheels (`nvidia-cudnn-cu12`, `nvidia-cublas-cu12`) with `LD_LIBRARY_PATH` set, rather than switching to `nvidia/cuda:*-ubuntu22.04` (which ships Python 3.10, not 3.11). The wheel route keeps every pin and the `deps`→`exporter`→`runtime` cache structure intact. ORT's CUDA major/cuDNN major must match or you get a silent CPU fallback rather than an error. |
 | x86_64 switch | ~half a day | Mechanical: the aarch64-only comments in both Dockerfiles, pins re-resolving on x86 (wheels exist). Two side benefits: the from-source `images/qdrant` build becomes unnecessary (4 K pages), and the M2 stops being the only builder — build in CI/on the instance and push to a registry, finally closing the "build once, distribute" item open since the Pi. |
 
-**Embedder as its own service (proposed 2026-09-29, `stack-upgrade-strategy.md` §7).**
-If adopted, EC2 gets a third image: the frozen embedding model plus its own pinned
+**Embedder as its own service (proposed 2026-09-29, `stack-upgrade-strategy.md` §7;
+ADOPTED for EC2 2026-10-27, so it can later move to another instance).**
+EC2 gets a third image: the frozen embedding model plus its own pinned
 onnxruntime (CUDA provider if the embedder goes fp16 on GPU), serving both the ingest
 worker and the query server. The server and worker images then carry no embedder
 runtime at all and upgrade independently of the vectors; the collection records the
@@ -462,9 +467,10 @@ would force ORT nine minor versions forward on its own. **Go x86_64 for the GPU 
 
 ### 6.4 Test data for end-to-end
 
-Do **not** re-ingest to test. Restore a `teamcenter` snapshot onto the test box — that
-path is built, idempotent, and validated (fires only on collection-404 plus
-manifest-absent).
+~~Do **not** re-ingest to test. Restore a `teamcenter` snapshot onto the test box.~~
+**Superseded (2026-09-29 / 10-27):** EC2 never serves the Mac mini's vectors — and
+they were made by a different embedder (CPU INT8) than EC2's. EC2 ingests its own
+Teamcenter 14.2 test collection on the instance (§8 3b).
 
 ---
 
@@ -477,12 +483,15 @@ What this repo hands the AWS/operator repo when the gates close:
 **measured** on the old stack, re-measure) and for the worker (~4.8 GB **measured**);
 bulk-ingest wall clock from §5.4.
 
-**New config keys to render** (all in the mounted `config.yaml`, none of them secret):
+**New config keys to render** (all in the mounted `config.yaml`, none of them secret;
+**all required** — a missing key refuses to start, §8 3b; names final when implemented):
 
 | Key | Purpose |
 |---|---|
 | `rerank.device` | `cpu` \| `cuda` |
 | `rerank.precision` | `int8` \| `fp16` |
+| `embed.url` (or similar) | address of the embedder service — server and worker |
+| `embed.device`, `embed.precision` | the embedder service's own runtime: `cuda`, `fp16` \| `fp32` |
 | `rerank.threads`, `embed.threads` | per-session core budget |
 | `server.max_concurrent_searches` | semaphore permits |
 | `server.warm_on_start` | startup warm-up toggle |
@@ -491,7 +500,7 @@ bulk-ingest wall clock from §5.4.
 revocable) stays the auth surface; `/healthz` stays the only open route and is the
 health-check target; `/mcp` stays streamable HTTP with a bearer header.
 
-**Three constraints the other repo must respect, and cannot see from the image:**
+**Constraints the other repo must respect, and cannot see from the image:**
 
 1. **Pool members are stateless and need no corpus.** The server reads Qdrant only —
    no manifest, no `/data/docs`. They need an identical `config.yaml` (differing
@@ -504,6 +513,13 @@ health-check target; `/mcp` stays streamable HTTP with a bearer header.
    `QdrantClient(host=..., port=...)` — no api_key, no https parameter. Cross-instance
    traffic is unauthenticated plaintext; network isolation is the only control until
    that is changed here.
+4. **The ingest host holds state; it needs a data EBS volume.** Qdrant storage, the
+   manifest and `/data/docs` are not reproducible from the AMI + Ansible. They sit on
+   the root disk only while the test collection is cheap to rebuild; a separate EBS
+   data volume (with snapshots) comes before anything else lands. Never the
+   `/opt/dlami/nvme` instance store — wiped on every stop/start.
+5. **The embedder is a separate unit** (§6.3) — the server and the worker reach it by
+   address, so the deploy must not assume it shares a host with either.
 
 ---
 
@@ -520,42 +536,62 @@ health-check target; `/mcp` stays streamable HTTP with a bearer header.
    test-built rootless on vhost2. Awaiting `notes/phase-a-runbook.md` steps 0-7 on the
    host — step 4 (embed parity vs stored `teamcenter`) is blocking — and the
    operator-repo switch-over.*
-   — *2026-10-01: steps 0-4 done on vhost2; step 4 failed its runtime bar
-   (onnxruntime 1.30 moves INT8 vectors, cos ~0.98). Revised with the user: the Mac
-   mini re-embeds `teamcenter` into `teamcenter_after_ort130` with the new worker
-   (runbook step R, overnight), gates on retrieval (step 6), then switches with no
-   downtime. From here the Mac mini and EC2 run as two independent tracks (3a, 3b).*
+   — *2026-10-14 → 10-17: the Mac mini rebuilt from scratch instead of re-embedding
+   (subject-keyed manifest, per-collection embedder stamp, worker fonts, embed batch
+   32 + token budget); retrieval gate adjudicated PASS, switched over 2026-10-17.
+   Record: branch `mac-mini`, `notes/phase-a-runbook.md`, `notes/phase-a/`.*
 
-   **3a. Mac mini** — the runbook, to the switch-over. Its images come from the
-   commit that passed the gates, never from a later commit of this branch.
+   **From here the two targets are two branches** (2026-10-27): `mac-mini` (the Mac
+   mini line) and `ec2-gpu` (this file's line, formerly `multi-user-rollout`). They
+   share history up to the merge of `mac-mini` into `ec2-gpu` on 2026-10-27 and **may
+   diverge for good**; later fixes are picked across deliberately, not merged by habit.
 
-   **3b. EC2, in parallel** — build the image, but **create no EC2 collection until
-   these are settled**, in this order; image work is cheap to redo, a collection built
-   on the wrong embedder means paying for a re-embed:
-   1. *fp16 reranker on onnxruntime + CUDA.* Gate 1 measured fp16 with torch, not
-      onnxruntime; the fp16 export (§6.3) is unwritten and §5.2's comparison against
-      fp32 has not run on it. The reason EC2 exists — validate it first.
-   2. *No silent CPU fallback.* A CUDA/cuDNN mismatch makes onnxruntime run on CPU
-      without an error (§6.3): the server must check at startup that it got the CUDA
-      provider and refuse to start otherwise.
-   3. *The embedder* — precision (fp16/fp32 vs INT8, §5.1), the separate embedding
-      service and the per-collection fingerprint (`stack-upgrade-strategy.md` §7).
-      Cheap only before the first collection exists.
-   4. *Where EC2 ingests.* On x86 needs an amd64 worker lock (`images/lock.sh` locks
-      the worker for aarch64 only) and maybe a CUDA torch for docling; on vhost2 brings
-      back the aarch64-vs-x86 embed parity check (§1.1).
-   Also needed before EC2 serves anyone, though they do not block the image: a
-   labelled work-archive question set (the retrieval gate has nothing to run on
-   without it), the Gate 3 concurrency changes (§6.1), and the archive parse at scale
-   (runbook step 7, then the pilot library).
+   **3b. EC2.** Decided 2026-10-27:
+   - **Ingest runs on the EC2 instance** — the corpus is embedded where it is served,
+     so §1.1's cross-architecture check does not apply. Needs an amd64 worker lock
+     (`images/lock.sh` locks the worker for aarch64 only).
+   - **Embedder fp16 or fp32 on the GPU, not INT8** (§5.1 reopened → decided; which of
+     the two is measured on the test collection).
+   - **The embedder is its own service** — a container with the frozen model and its
+     own pinned onnxruntime, called over the network by the worker and the server, so
+     it can move to another instance (`stack-upgrade-strategy.md` §7 item 1, adopted).
+     The server and worker images then carry no embedder runtime.
+   - **No silent defaults.** Every new key (`rerank.device`, `rerank.precision`, the
+     embedder's address and precision, …) is **required**; a config without it refuses
+     to start, naming the key. The Mac mini gets the keys explicitly if `mac-mini` ever
+     takes this code — a missing key never means "today's behaviour".
+   - **Hardware stays `g4dn.xlarge` (T4, 4 vCPU, 15 GiB, no swap) for now**, slow
+     ingest accepted: something working end to end first; the instance is bumped for
+     the full rebuild tests.
+   - **Test collection: Teamcenter 14.2** (78 PDFs, 179 MB) — not the SKF pilot. The
+     Mac mini's `teamcenter_14_2` (39,649 pts, CPU INT8) is the baseline; the gate is
+     a short labelled 14.2 question set run against both.
+   - **Users: LibreChat as a container on the host, reached through an SSM port
+     forward**, with an external LLM API (egress via Zscaler). ALB, real ingress and
+     Gate 3 (§6) come later.
 
-   **What the two tracks share is the code, not data.** EC2's changes (new config keys,
-   fp16 export, the CUDA provider) land in the same `src/` the Mac mini image is built
-   from. Every new setting must therefore default to today's behaviour when absent —
-   e.g. no `rerank.device` in a config means CPU, no `rerank.precision` means INT8 —
-   so the Mac mini's existing `config.yaml` keeps working unchanged when it is next
-   rebuilt from a later commit. That is what §6.3's "one image still runs CPU-only"
-   means in practice.
+   Still in this order before the first EC2 collection — image work is cheap to redo,
+   a collection on the wrong embedder is a re-embed:
+   1. *fp16 reranker on onnxruntime + CUDA* — the fp16 export (§6.3) is unwritten and
+      §5.2's comparison against fp32 has not run on it.
+   2. *No silent CPU fallback* — a CUDA/cuDNN mismatch makes onnxruntime run on CPU
+      without an error: the server and the embedder check at startup that they got the
+      CUDA provider and refuse to start otherwise. Also: exactly one of `onnxruntime` /
+      `onnxruntime-gpu` may be installed (docling's OCR extras pull the CPU one).
+   3. *The embedder service* — fp16/fp32 exports from a pinned HF revision as a new
+      `docs-bridge-models` tag, the service image, and the fingerprint extended with
+      precision and execution provider.
+
+   **Host facts (inventory 2026-10-27):** Docker 29.8 + NVIDIA Container Toolkit 1.20
+   already registered as a runtime, driver 595.91 / CUDA 13.2 (runs CUDA-12 wheels in
+   containers), 96 GB root disk, and a 115 GB `/opt/dlami/nvme` **instance store that
+   is wiped on every stop/start** — scratch only, never Qdrant or the manifest.
+
+   **Not to forget — a separate EBS data volume.** For the test collection, Qdrant, the
+   manifest and the documents live on the root disk. Before anything that is not
+   cheaply reproducible lands there, the AWS repo adds a data EBS volume (and its
+   snapshot/backup), because its README assumes the root disk holds nothing that the
+   AMI + Ansible cannot rebuild.
 4. **Gate 2** (§5): embed determinism, reranker A/B, first-stage sanity, cost refresh
    off the pilot library.
 5. **Gate 3** (§6): the concurrency changes, the liveness test, pool statelessness;

@@ -1,0 +1,27 @@
+[history] groups: other-md 211 docs / 2575 chunks, reingested-aug31 37 docs / 26731 chunks, pdf-june 69 docs / 27793 chunks, soa-june 13707 docs / 81451 chunks
+[history] other-md: window 1/3, 64 chunks from 4 doc(s)
+[history] other-md: window 2/3, 64 chunks from 26 doc(s)
+[history] other-md: window 3/3, 64 chunks from 6 doc(s)
+[history] reingested-aug31: window 1/3, 64 chunks from 1 doc(s)
+[history] reingested-aug31: window 2/3, 64 chunks from 1 doc(s)
+[history] reingested-aug31: window 3/3, 64 chunks from 1 doc(s)
+[history] pdf-june: window 1/3, 64 chunks from 2 doc(s)
+[history] pdf-june: window 2/3, 64 chunks from 2 doc(s)
+[history] pdf-june: window 3/3, 64 chunks from 1 doc(s)
+[history] soa-june: window 1/3, 64 chunks from 3 doc(s)
+[history] soa-june: window 2/3, 64 chunks from 25 doc(s)
+[history] soa-june: window 3/3, 64 chunks from 13 doc(s)
+
+embed history | teamcenter | today's worker model 68086607db73f9c3 | 768 chunks re-embedded
+  normal wobble (same model, alone vs batch of 64), all groups: cosine distance median 1.73e-02  p99 2.49e-02
+  a stored vector is OUTSIDE when it sits further from BOTH of today's measurements of it than 2x its group's wobble p99
+
+  group              chunks  wobble med     limit  stored med  stored p95  stored max  outside
+  other-md              192    1.69e-02  4.84e-02    1.65e-02    2.02e-02    2.22e-02      0%
+  reingested-aug31      192    1.75e-02  5.28e-02    1.64e-02    2.10e-02    2.94e-02      0%
+  pdf-june              192    1.67e-02  5.05e-02    1.62e-02    2.05e-02    2.26e-02      0%
+  soa-june              192    1.80e-02  4.80e-02    1.77e-02    2.20e-02    2.54e-02      0%
+
+VERDICT: CONSISTENT
+
+wrote /out/00b-history.json

@@ -1,0 +1,59 @@
+
+rerank A/B | fixture=/fx/fixture.json
+  CPU baseline (timing): onnx-cpu-int8 on f6b1bd1e525a [aarch64, 10 cores], 354 ms/pair
+  reference + judge:     fixture baseline column: onnx-cpu-int8 (BAAI/bge-reranker-v2-m3) — legacy; plan §2.4 now judges against fp32 (--reference)
+  candidate:             onnx int8 on CPUExecutionProvider (BAAI/bge-reranker-v2-m3)
+  top_n=40 k=6 max_length=512 oracle_pool=80 queries=8
+  bar: top-3 ordered-identical AND top-6 Jaccard >= 0.83 vs the reference
+
+  warm-up (8 pairs, includes any lazy init): 1.03 s
+
+query                                           s  ms/pr  spdup  top3  jacc  judge    maxS
+------------------------------------------------------------------------------------------
+How do we read properties of a Teamcenter    8.74  218.4   1.6x   yes  1.00    5/5    4.25
+How to read BOM data from Teamcenter in A    9.29  232.2   1.6x    NO  1.00    4/4    3.87
+How to send an email from T4X?               8.47  211.8   1.6x    NO  1.00    4/4    2.67
+How does SAP distinguish if a BOM line wa    9.12  227.9   1.6x   yes  1.00    6/6    6.03
+How do we update basic unit of measure in    8.90  222.5   1.6x    NO  0.71    4/5    2.32
+TC_transfer_area site preference            10.47  261.9   1.6x    NO  0.71    5/6    3.85
+EPM_attach_related_objects                   8.17  204.4   1.6x   yes  0.71    2/2    5.56
+how to bake sourdough bread                  8.36  209.1   1.6x   yes  1.00    6/6   -6.26
+
+speed: 222.5 ms/pair median (1.6x the CPU baseline's 354 ms/pair)
+       => 8.90 s per search at top_n=40, 13.35 s at multi_top_n=60
+
+SELFTEST: max |candidate - reference| = 1.27e+00 => MISMATCH
+
+DIFFERS from the reference on 5/7 queries — adjudicating with the reference as a fixed judge over the deep pool:
+
+  How to read BOM data from Teamcenter in AIG
+    top-3 identical: False  jaccard: 1.00
+    judge's global-best top-6: 4 of them in the reranked 40; candidate keeps 4/4, reference keeps 4/4
+    -> ACCEPT: differs only on chunks the judge does not rank globally best
+
+  How to send an email from T4X?
+    top-3 identical: False  jaccard: 1.00
+    judge's global-best top-6: 4 of them in the reranked 40; candidate keeps 4/4, reference keeps 4/4
+    -> ACCEPT: differs only on chunks the judge does not rank globally best
+
+  How do we update basic unit of measure in SAP?
+    top-3 identical: False  jaccard: 0.71
+    judge's global-best top-6: 5 of them in the reranked 40; candidate keeps 4/5, reference keeps 5/5
+    -> REGRESSION (reject): drops the judge's global-best ['3e05702a-9ff0-5d8b-bb07-e12cf843d76b']
+
+  TC_transfer_area site preference
+    top-3 identical: False  jaccard: 0.71
+    judge's global-best top-6: 6 of them in the reranked 40; candidate keeps 5/6, reference keeps 6/6
+    -> REGRESSION (reject): drops the judge's global-best ['8d6b11da-2365-5b52-a3a0-335b7248a1cc']
+
+  EPM_attach_related_objects
+    top-3 identical: True  jaccard: 0.71
+    judge's global-best top-6: 2 of them in the reranked 40; candidate keeps 2/2, reference keeps 2/2
+    -> ACCEPT: differs only on chunks the judge does not rank globally best
+
+VERDICT: FAIL
+  - selftest mismatch 1.27e+00 — this scorer does not reproduce the reference; no comparison below is trustworthy
+  - judge-confirmed regression on: How do we update basic unit of measure in SAP?
+  - judge-confirmed regression on: TC_transfer_area site preference
+
+wrote /out/2-rerank-vs-old-int8.json

@@ -1,0 +1,50 @@
+[run] warm-up 11.1 s (model load)
+[run] tc-001    6.6s hit@1    How do we read properties of a Teamcenter relation?
+[run] tc-002    7.2s MISS     How to read BOM data from Teamcenter in AIG
+[run] tc-003    7.8s hit@3    How to send an email from T4X?
+[run] tc-004    9.0s hit@1    How does SAP distinguish if a BOM line was created in SAP or
+[run] tc-005    7.9s hit@1    How do we update basic unit of measure in SAP?
+[run] tc-006    8.2s hit@3    TC_transfer_area site preference
+[run] tc-007    9.0s MISS     EPM_attach_related_objects
+[run] tc-008    3.9s hit@1    If SSO is enabled, how are the -u and -p arguments of Teamce
+[run] tc-009    8.5s hit@1    Which EPM-notify recipient sends email only to the users who
+[run] tc-010    7.8s hit@4    What does the ExportPath option do in the workflow handler t
+[run] tc-011    8.7s hit@1    How does the FMS server cache (FSC) store downloaded files i
+[run] tc-012    7.8s hit@3    Which utility lists all Teamcenter classes and their attribu
+[run] tc-013    6.8s hit@4    Does T4x transfer an empty Teamcenter BOM to the ERP system?
+[run] tc-014    9.3s hit@1    How can Multi-Site Collaboration communicate through a firew
+[run] tc-015    9.1s hit@4    Which role is allowed to attach an ITAR license to a workspa
+[run] tc-016    7.3s hit@1    Why are persistent properties not copied when a change objec
+[run] tc-017    7.8s hit@1    What has to match before an Access Manager rule tree can be 
+[run] tc-018    7.7s hit@1    Which dispatcher services does Teamcenter Substance Complian
+[run] tc-019    7.5s hit@1    How do I turn off database partitioning for the POM-revisabl
+[run] tc-020    8.6s hit@1    What is the default of BMF_BYPASS_ALL_EXTENSION_RULES and wh
+[run] tc-021    8.4s hit@3    When do I need to set TCCS_CONFIG_HOME?
+[run] tc-022    8.0s hit@1    What steps are needed before T4x can transfer a new object o
+[run] tc-023    7.3s hit@1    How do I run Visualization Server Manager as a Linux daemon?
+[run] tc-024    8.0s hit@2    Why should the Visualization Server Pool Assigner be started
+[run] tc-025    8.2s MISS     How can a workflow handler change the status of attachments 
+[run] tc-026    8.0s hit@1    How do I rename custom workflow handlers and their arguments
+[run] tc-027    7.2s hit@2    How are substitute parts chosen when the original part in an
+[run] tc-028    8.2s hit@1    How do I run the TcFTSIndexer object data synchronization on
+[run] tc-029    8.2s hit@2    How do I make Active Workspace index the content of dataset 
+[run] tc-030    7.6s hit@2    How do I create classification key-LOVs from a JSON file?
+[run] tc-031    8.2s hit@1    Why should the classification search constant not be set on 
+[run] tc-032    8.5s hit@2    How do I get a detailed PLM XML log file?
+[run] tc-033    8.4s hit@1    What must be true of site IDs for two sites to export object
+[run] tc-034    7.9s hit@2    How can I move volume files to other volumes based on rules?
+[run] tc-035    6.8s hit@1    Can the system group be deleted?
+[run] tc-036    7.7s hit@1    How do I control which commands users see in Active Workspac
+[run] tc-037    6.6s hit@1    How do I make Visualization Convert produce PDFs optimized f
+[run] tc-038    7.7s hit@1    In which encoding must the rich client customer.properties f
+[run] tc-039    8.1s hit@1    What must I run after removing the Localization button from 
+[run] tc-040    8.2s hit@1    What does the T4S error "Field WERKS has been transferred in
+[run] tc-041    7.9s hit@1    Why does a T4S material master search not find materials wit
+[run] tc-042    9.3s hit@1    What must be done for a fresh Linux Deployment Center deploy
+[run] tc-c01    6.7s abstain  how to bake sourdough bread
+[run] tc-c02    8.6s ANSWERS  What is the best way to configure an nginx ingress on Kubern
+[run] tc-c03    7.2s abstain  Which football club won the 2010 Champions League final?
+
+new: hit@6 0.93 (39/42), MRR 0.74, controls abstaining 2/3, median 7.9 s/query [onnxruntime 1.30.0, tokenizers 0.23.2]
+  note: 44 question(s) still have DRAFT labels
+wrote /out/7-retrieval-new.json

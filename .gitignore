@@ -36,3 +36,12 @@ venv/
 
 # Python build artifacts
 *.egg-info/
+
+# Phase A raw run output: bulky logs and vector dumps stay on vhost2 / local only;
+# the small summaries (*.txt verdicts, analysis) are committed.
+notes/phase-a/embed-*.json
+notes/phase-a/6-rebuild-*.txt
+notes/phase-a/*-ingest.txt
+notes/phase-a/5-whats-new.txt
+notes/phase-a/3-smoke-chunks.json
+notes/phase-a/1-build-*.log

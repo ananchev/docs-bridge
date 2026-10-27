@@ -73,7 +73,10 @@ def build_mcp(searcher: Searcher, cfg: Config):
         for a cross-cutting question, pass the several relevant subjects. Results are
         reranked GLOBALLY across the chosen pools and each chunk is tagged with its
         `subject`; cited (source_path, section, last_updated) — retrieval only, no
-        LLM synthesis."""
+        LLM synthesis. Across several pools, a passage whose text is identical in more
+        than one is returned ONCE: `subjects` lists every pool it was found in and
+        `also_in` their citations — e.g. text unchanged between two product versions.
+        A pool missing from `subjects` does NOT mean the text differs there."""
         return searcher.search(subject, query, k)
 
     return mcp

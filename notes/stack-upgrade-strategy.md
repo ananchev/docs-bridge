@@ -269,10 +269,12 @@ Mac mini — the rest are design decisions still to take):
    as the rollback). On a GPU it is a fraction of the 13 h CPU figure. It stays the
    last resort, not the upgrade procedure.
 
-**Where each target stands.** Mac mini (revised 2026-10-01): this once, it takes
-item 5 — `teamcenter` is re-embedded on the new runtime into `teamcenter_after_ort130`
-(runbook step R) and gated with item 3 (step 6), then switched with no downtime; it
-also replaces June vectors made by builds that no longer exist. Items 1-2 are worth
-retrofitting at its next server change, so the *next* upgrade does not need a re-embed. EC2: 1, 2 and 4
-are design inputs for its images (`multi-user-rollout-plan.md` §1.1, §5.1, §6.3), cheapest to adopt
-before its first collection exists.
+**Where each target stands (2026-10-27).** Mac mini: neither re-embedded nor kept —
+it **rebuilt from scratch** on branch `mac-mini` (October; `phase-a-runbook.md`), gated
+with item 3, and took item 2 (each collection is stamped with
+`OnnxEmbedder.fingerprint` and a mismatch is refused). It stays CPU INT8 in-process;
+item 1 remains open for it. EC2 (branch `ec2-gpu`): **items 1, 2 and 4 adopted** — the
+embedder is its own service (container, movable to another instance), fp16 or fp32 on
+the GPU, and the fingerprint gains precision and execution provider. Item 3's question
+set for the first EC2 collection (Teamcenter 14.2) is a short labelled set with the Mac
+mini's 14.2 as baseline (`multi-user-rollout-plan.md` §8 3b).

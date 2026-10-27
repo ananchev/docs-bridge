@@ -1,0 +1,8 @@
+-- localhost/docs-bridge:2026.10-macmini
+[32mOK[0m   bge-m3 bytes = the frozen ones
+   onnxruntime tokenizers numpy new-code nvidia-pkgs: 1.30.0 0.23.2 2.4.6 True 0
+[32mOK[0m   versions, code and no CUDA as expected
+-- localhost/ingest-worker:2026.10-macmini
+[32mOK[0m   bge-m3 bytes = the frozen ones
+   onnxruntime tokenizers numpy new-code nvidia-pkgs: 1.30.0 0.23.2 2.4.6 True 0
+[32mOK[0m   versions, code and no CUDA as expected

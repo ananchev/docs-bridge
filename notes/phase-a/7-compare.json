@@ -1,0 +1,299 @@
+{
+  "verdict": "FAIL",
+  "failures": [
+    "tc-002: answered before (rank 1), missed now [draft label]",
+    "tc-007: answered before (rank 3), missed now [draft label]"
+  ],
+  "old": {
+    "questions": 42,
+    "controls": 3,
+    "hit_at_k": 0.9761904761904762,
+    "mrr": 0.7626984126984127,
+    "controls_abstaining": 2,
+    "draft_labels": 44,
+    "median_seconds": 14.718397384509444,
+    "k": 6
+  },
+  "new": {
+    "questions": 42,
+    "controls": 3,
+    "hit_at_k": 0.9285714285714286,
+    "mrr": 0.7400793650793651,
+    "controls_abstaining": 2,
+    "draft_labels": 44,
+    "median_seconds": 7.922839768230915,
+    "k": 6
+  },
+  "per_question": [
+    {
+      "id": "tc-001",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": -0.16277670860290527
+    },
+    {
+      "id": "tc-002",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": -0.631718635559082
+    },
+    {
+      "id": "tc-003",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": -0.17113828659057617
+    },
+    {
+      "id": "tc-004",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": 0.738802433013916
+    },
+    {
+      "id": "tc-005",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": 0.7886197566986084
+    },
+    {
+      "id": "tc-006",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": 0.057401418685913086
+    },
+    {
+      "id": "tc-007",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": -0.6967992782592773
+    },
+    {
+      "id": "tc-008",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": 0.606325626373291
+    },
+    {
+      "id": "tc-009",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": 1.1473946571350098
+    },
+    {
+      "id": "tc-010",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": -0.9082345962524414
+    },
+    {
+      "id": "tc-011",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": -0.2328634262084961
+    },
+    {
+      "id": "tc-012",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": 0.13814091682434082
+    },
+    {
+      "id": "tc-013",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": 0.27439355850219727
+    },
+    {
+      "id": "tc-014",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": 0.19973182678222656
+    },
+    {
+      "id": "tc-015",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": 0.5557723045349121
+    },
+    {
+      "id": "tc-016",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": -0.5785665512084961
+    },
+    {
+      "id": "tc-017",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": -0.19560003280639648
+    },
+    {
+      "id": "tc-018",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": 0.6007370948791504
+    },
+    {
+      "id": "tc-019",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": -0.2958707809448242
+    },
+    {
+      "id": "tc-020",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": 0.05706787109375
+    },
+    {
+      "id": "tc-021",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": 0.9529030323028564
+    },
+    {
+      "id": "tc-022",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": -0.4461822509765625
+    },
+    {
+      "id": "tc-023",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": -0.018809795379638672
+    },
+    {
+      "id": "tc-024",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": -0.005637168884277344
+    },
+    {
+      "id": "tc-025",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": 0.3162662982940674
+    },
+    {
+      "id": "tc-026",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": -1.1044750213623047
+    },
+    {
+      "id": "tc-027",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": 0.3361172676086426
+    },
+    {
+      "id": "tc-028",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": -0.19260692596435547
+    },
+    {
+      "id": "tc-029",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": 0.5033273696899414
+    },
+    {
+      "id": "tc-030",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": 1.2890839576721191
+    },
+    {
+      "id": "tc-031",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": 0.2885713577270508
+    },
+    {
+      "id": "tc-032",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": -0.058588504791259766
+    },
+    {
+      "id": "tc-033",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": 0.5273904800415039
+    },
+    {
+      "id": "tc-034",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": 0.06612253189086914
+    },
+    {
+      "id": "tc-035",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": 0.5953161716461182
+    },
+    {
+      "id": "tc-036",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": -0.15263700485229492
+    },
+    {
+      "id": "tc-037",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": -0.11461019515991211
+    },
+    {
+      "id": "tc-038",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": 0.36948537826538086
+    },
+    {
+      "id": "tc-039",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": 0.3996157646179199
+    },
+    {
+      "id": "tc-040",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": -0.06040811538696289
+    },
+    {
+      "id": "tc-041",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": -3.031630093231797
+    },
+    {
+      "id": "tc-042",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": -0.4519500732421875
+    },
+    {
+      "id": "tc-c01",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": -1.9651169776916504
+    },
+    {
+      "id": "tc-c02",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": 0.15427851676940918
+    },
+    {
+      "id": "tc-c03",
+      "jaccard": 0.0,
+      "top3_same": false,
+      "max_score_shift": 0.7852215766906738
+    }
+  ]
+}

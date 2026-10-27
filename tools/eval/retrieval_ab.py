@@ -44,16 +44,19 @@ import time
 
 
 def _hits(result: dict, expect: list[dict]) -> bool:
+    # A multi-pool search folds identical text into one result; its other copies are
+    # in `also_in` (same text, their own doc_id/section) and count as the same hit.
     text = (result.get("text") or "").lower()
-    section = result.get("section") or ""
-    for e in expect:
-        if result.get("doc_id") != e["doc"]:
-            continue
-        if e.get("section") and e["section"] not in section:
-            continue
-        if e.get("contains") and e["contains"].lower() not in text:
-            continue
-        return True
+    for cite in [result, *(result.get("also_in") or [])]:
+        section = cite.get("section") or ""
+        for e in expect:
+            if cite.get("doc_id") != e["doc"]:
+                continue
+            if e.get("section") and e["section"] not in section:
+                continue
+            if e.get("contains") and e["contains"].lower() not in text:
+                continue
+            return True
     return False
 
 
@@ -70,16 +73,19 @@ def run(args) -> int:
           if q.get("status") != "drop"]
     cfg = config.load(args.config)
     searcher = Searcher(cfg)
+    # "a,b" spans several pools (e.g. a corpus split into teamcenter-2512 +
+    # teamcenter-whats-new, compared against the old single `teamcenter`).
+    subject = args.subject.split(",") if "," in args.subject else args.subject
     k = args.k or cfg.server.default_k
 
     t0 = time.perf_counter()
-    searcher.search(args.subject, "warm-up: load the embedder and the reranker", k=k)
+    searcher.search(subject, "warm-up: load the embedder and the reranker", k=k)
     print(f"[run] warm-up {time.perf_counter() - t0:.1f} s (model load)", file=sys.stderr)
 
     rows = []
     for q in qs:
         t0 = time.perf_counter()
-        res = searcher.search(args.subject, q["question"], k=k)
+        res = searcher.search(subject, q["question"], k=k)
         dt = time.perf_counter() - t0
         top = [{"rank": i + 1, "chunk_id": r.get("chunk_id"), "doc_id": r.get("doc_id"),
                 "section": r.get("section"), "score": r.get("score"),
@@ -98,7 +104,8 @@ def run(args) -> int:
 
     out = {"label": args.label, "subject": args.subject, "k": k,
            "versions": {p: version(p) for p in ("onnxruntime", "tokenizers", "numpy")},
-           "rerank": {"top_n": cfg.rerank.top_n, "int8": cfg.rerank.int8},
+           "rerank": {"top_n": cfg.rerank.top_n, "multi_top_n": cfg.rerank.multi_top_n,
+                      "int8": cfg.rerank.int8},
            "summary": summarize(rows, k), "questions": rows}
     json.dump(out, open(args.out, "w"), indent=2)
     print_summary(out)
@@ -195,7 +202,8 @@ def main() -> int:
     r = sub.add_parser("run", help="ask every question through the real Searcher")
     r.add_argument("--config", default="/config/config.yaml")
     r.add_argument("--questions", required=True)
-    r.add_argument("--subject", required=True)
+    r.add_argument("--subject", required=True,
+                   help="a subject, or several comma-separated (searched as one list)")
     r.add_argument("--k", type=int, default=0, help="0 = server.default_k")
     r.add_argument("--label", required=True, help="e.g. old / new")
     r.add_argument("--out", required=True)

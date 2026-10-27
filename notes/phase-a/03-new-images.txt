@@ -1,0 +1,14 @@
+== localhost/docs-bridge:2026.09-phase-a
+8ead5c66de367d5ef4154f2b0a46bc773a147ad84dc0e976a025ba5d884872b0  /opt/bge-m3-onnx/meta.json
+68086607db73f9c336bbaced6dfe8543cdbc15a34681bf25bc678e930c2ad3d2  /opt/bge-m3-onnx/model.int8.onnx
+31eec453b1bed92daefc6f5df8f0bf7c32361285a1a5d977004cd88bf2362fa2  /opt/bge-m3-onnx/sparse_linear.npz
+249df0778f236f6ece390de0de746838ef25b9d6954b68c2ee71249e0a9d8fd4  /opt/bge-m3-onnx/tokenizer.json
+{'onnxruntime': '1.30.0', 'tokenizers': '0.23.2', 'numpy': '2.4.6', 'qdrant-client': '1.12.1'}
+0
+== localhost/ingest-worker:2026.09-phase-a
+8ead5c66de367d5ef4154f2b0a46bc773a147ad84dc0e976a025ba5d884872b0  /opt/bge-m3-onnx/meta.json
+68086607db73f9c336bbaced6dfe8543cdbc15a34681bf25bc678e930c2ad3d2  /opt/bge-m3-onnx/model.int8.onnx
+31eec453b1bed92daefc6f5df8f0bf7c32361285a1a5d977004cd88bf2362fa2  /opt/bge-m3-onnx/sparse_linear.npz
+249df0778f236f6ece390de0de746838ef25b9d6954b68c2ee71249e0a9d8fd4  /opt/bge-m3-onnx/tokenizer.json
+{'onnxruntime': '1.30.0', 'tokenizers': '0.23.2', 'numpy': '2.4.6', 'qdrant-client': '1.12.1'}
+0

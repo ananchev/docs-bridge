@@ -25,15 +25,21 @@ import torch or FlagEmbedding.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
+from functools import cached_property
 
 import numpy as np
 
 from .embed import SparseVec  # reuse the exact same Qdrant-ready sparse container
 
 log = logging.getLogger(__name__)
+
+# Upper bound on batch_size x padded_length^2 for one ONNX run (see encode()): a batch
+# of 32 chunks of up to 512 tokens — the shape the 3.7 GB peak was measured on.
+TOKEN_BUDGET = 32 * 512 * 512
 
 
 class OnnxEmbedder:
@@ -58,6 +64,9 @@ class OnnxEmbedder:
 
         onnx_file = "model.int8.onnx" if use_int8 else "model.onnx"
         onnx_path = os.path.join(model_dir, onnx_file)
+        self._model_dir = model_dir
+        self._onnx_file = onnx_file
+        self._use_int8 = use_int8
         if not os.path.exists(onnx_path):
             raise FileNotFoundError(
                 f"{onnx_path} not found; run tools/export_bge_m3_onnx.py first "
@@ -83,6 +92,10 @@ class OnnxEmbedder:
         # Pad to the longest sequence in each batch (dynamic) so short batches stay cheap.
         pad_id = self.tokenizer.token_to_id("<pad>")
         self.tokenizer.enable_padding(pad_id=pad_id or 1, pad_token="<pad>")
+        # Same tokenizer without padding, only to measure each text's length for the
+        # batch split in encode().
+        self._len_tokenizer = Tokenizer.from_file(os.path.join(model_dir, "tokenizer.json"))
+        self._len_tokenizer.enable_truncation(max_length=max_length)
 
         # Special token ids to exclude from the sparse vector (same set FlagEmbedding
         # drops: cls/bos, sep/eos, pad, unk). Missing ones resolve to None and are
@@ -93,7 +106,56 @@ class OnnxEmbedder:
         }
         self._special.discard(None)
 
+    @cached_property
+    def fingerprint(self) -> dict:
+        """What decides the vectors: the model bytes AND the runtime that runs them.
+        Phase A step 4 showed identical model bytes and tokens still move INT8 dense
+        vectors to cosine ~0.987 across onnxruntime 1.20 -> 1.30, so the runtime
+        version is part of the identity. Stamped per collection by the manifest.
+        Hashing reads ~0.6 GB, so it runs once, on first use (the ingest worker),
+        never on server startup."""
+        import onnxruntime as ort
+        import tokenizers
+
+        files = {}
+        for f in (self._onnx_file, "sparse_linear.npz", "tokenizer.json"):
+            h = hashlib.sha256()
+            with open(os.path.join(self._model_dir, f), "rb") as fh:
+                for block in iter(lambda: fh.read(1 << 20), b""):
+                    h.update(block)
+            files[f] = h.hexdigest()[:16]
+        return {
+            "files": files,
+            "int8": self._use_int8,
+            "onnxruntime": ort.__version__,
+            "tokenizers": tokenizers.__version__,
+        }
+
     def encode(self, texts: list[str]) -> tuple[list[list[float]], list[SparseVec]]:
+        """Embed `texts`, splitting the batch whenever padding would make it too big.
+
+        Each run pads to the batch's longest text, and attention memory grows with
+        batch x length^2 — measured 2026-10-15/16 on vhost2: one 587-token chunk took a
+        64-batch to 7.6 GB, and table-of-contents dot leaders (785 tokens) killed a
+        32-batch at a 10 GB cap. Consecutive texts are grouped so that
+        len(group) x longest^2 stays within TOKEN_BUDGET (32 x 512^2). Batches that
+        already fit — every batch of typical chunks — run unchanged as one group, so
+        their vectors are exactly what an unsplit run gives."""
+        lengths = [len(e.ids) for e in self._len_tokenizer.encode_batch(texts)]
+        dense: list[list[float]] = []
+        sparse: list[SparseVec] = []
+        start, longest = 0, 0
+        for i, n in enumerate(lengths):
+            grown = max(longest, n)
+            if i > start and (i - start + 1) * grown * grown > TOKEN_BUDGET:
+                d, s_ = self._encode_group(texts[start:i])
+                dense += d; sparse += s_
+                start, grown = i, n
+            longest = grown
+        d, s_ = self._encode_group(texts[start:])
+        return dense + d, sparse + s_
+
+    def _encode_group(self, texts: list[str]) -> tuple[list[list[float]], list[SparseVec]]:
         encs = self.tokenizer.encode_batch(texts)
         input_ids = np.array([e.ids for e in encs], dtype=np.int64)
         attn = np.array([e.attention_mask for e in encs], dtype=np.int64)

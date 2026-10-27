@@ -1,0 +1,2 @@
+phase_a_smoke_a smoke-a {"files": {"model.int8.onnx": "68086607db73f9c3", "sparse_linear.npz": "31eec453b1bed92d", "tokenizer.json": "249df0778f236f6e"}, "int8": true, "onnxruntime": "1.30.0", "tokenizers": "0.23.2"}
+phase_a_smoke_b smoke-b {"files": {"model.int8.onnx": "68086607db73f9c3", "sparse_linear.npz": "31eec453b1bed92d", "tokenizer.json": "249df0778f236f6e"}, "int8": true, "onnxruntime": "1.30.0", "tokenizers": "0.23.2"}

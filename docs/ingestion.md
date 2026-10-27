@@ -109,7 +109,8 @@ for the schema.
 
 ## Idempotency and deletes
 
-Point ids in Qdrant are a deterministic UUIDv5 of `"{doc_id}:{chunk_index}"`, so
+Point ids in Qdrant are a deterministic UUIDv5 of `"{subject}/{doc_id}:{chunk_index}"`
+([data-model.md](data-model.md#point-ids)), so
 re-ingesting a document **overwrites** its points rather than duplicating them. A
 document's lifecycle:
 

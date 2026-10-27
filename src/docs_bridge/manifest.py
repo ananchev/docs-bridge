@@ -10,40 +10,64 @@ Two roles (design §8):
 Shrink-safety (a doc losing chunks on edit) is handled at upsert time by deleting
 all of a doc's Qdrant points by `doc_id` filter before re-inserting, so we do not
 need to track the per-chunk id set here.
+
+Every key is SUBJECT-QUALIFIED: a doc_id is only a path relative to its subject dir,
+so two subjects with the same layout (Teamcenter 2512 and 2606) produce the same
+doc_ids. With doc_id alone as the key (the schema before 2026-10) such subjects
+silently overwrote each other's rows and re-embedded every night. A third table,
+`collections`, stamps each collection with the embedder that filled it, so a later
+embedder change can never mix two models' vectors in one collection unnoticed.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 from collections.abc import Iterator
+from datetime import datetime, timezone
 
 from .models import Chunk, DocState
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS docs (
-    doc_id       TEXT PRIMARY KEY,
     subject      TEXT NOT NULL,
+    doc_id       TEXT NOT NULL,
     source_path  TEXT NOT NULL,
     content_hash TEXT NOT NULL,
     last_updated TEXT NOT NULL,
-    chunk_count  INTEGER NOT NULL DEFAULT 0
+    chunk_count  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (subject, doc_id)
 );
-CREATE INDEX IF NOT EXISTS idx_docs_subject ON docs(subject);
 
 CREATE TABLE IF NOT EXISTS staged_chunks (
-    chunk_id     TEXT PRIMARY KEY,
-    doc_id       TEXT NOT NULL,
     subject      TEXT NOT NULL,
+    chunk_id     TEXT NOT NULL,
+    doc_id       TEXT NOT NULL,
     source_path  TEXT NOT NULL,
     chunk_index  INTEGER NOT NULL,
     section_path TEXT NOT NULL,
     content_hash TEXT NOT NULL,
     last_updated TEXT NOT NULL,
-    text         TEXT NOT NULL
+    text         TEXT NOT NULL,
+    PRIMARY KEY (subject, chunk_id)
 );
-CREATE INDEX IF NOT EXISTS idx_staged_subject ON staged_chunks(subject);
+
+CREATE TABLE IF NOT EXISTS collections (
+    collection   TEXT PRIMARY KEY,
+    subject      TEXT NOT NULL,
+    embedder     TEXT NOT NULL,   -- JSON fingerprint, see OnnxEmbedder.fingerprint
+    stamped_at   TEXT NOT NULL
+);
 """
+
+
+class LegacyManifestError(RuntimeError):
+    """The file has the pre-2026-10 schema (doc_id alone as the key)."""
+
+
+class EmbedderMismatchError(RuntimeError):
+    """A collection is about to receive vectors from a different embedder."""
 
 
 class Manifest:
@@ -51,8 +75,21 @@ class Manifest:
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         self.db = sqlite3.connect(path)
         self.db.row_factory = sqlite3.Row
+        self._refuse_legacy(path)
         self.db.executescript(_SCHEMA)
         self.db.commit()
+
+    def _refuse_legacy(self, path: str) -> None:
+        """Fail loudly on an old-schema file instead of migrating it in place. The
+        Mac mini rebuild ingests into a NEW manifest + new collections, and the old
+        stack keeps reading the old file — touching it would break the rollback."""
+        pk = [r["name"] for r in self.db.execute("PRAGMA table_info(docs)") if r["pk"]]
+        if pk == ["doc_id"]:
+            self.db.close()
+            raise LegacyManifestError(
+                f"{path} is a legacy manifest (docs keyed by doc_id alone). Point "
+                f"manifest_path at a new file; this one belongs to the old stack."
+            )
 
     def close(self) -> None:
         self.db.close()
@@ -87,7 +124,7 @@ class Manifest:
         self.db.execute(
             "INSERT INTO docs (doc_id, subject, source_path, content_hash, "
             "last_updated, chunk_count) VALUES (?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(doc_id) DO UPDATE SET "
+            "ON CONFLICT(subject, doc_id) DO UPDATE SET "
             "source_path=excluded.source_path, content_hash=excluded.content_hash, "
             "last_updated=excluded.last_updated, chunk_count=excluded.chunk_count",
             (
@@ -101,9 +138,46 @@ class Manifest:
         )
         self.db.commit()
 
-    def delete_doc(self, doc_id: str) -> None:
-        self.db.execute("DELETE FROM docs WHERE doc_id = ?", (doc_id,))
+    def delete_doc(self, subject: str, doc_id: str) -> None:
+        self.db.execute(
+            "DELETE FROM docs WHERE subject = ? AND doc_id = ?", (subject, doc_id)
+        )
         self.db.commit()
+
+    # --- embedder stamp (persistent) --------------------------------------------
+
+    def stamp_collection(
+        self, collection: str, subject: str, fingerprint: dict
+    ) -> None:
+        """Record which embedder fills `collection` on first use; afterwards refuse
+        a different one. Exact match: any change (model bytes, onnxruntime or
+        tokenizers version, int8 flag) means a deliberate re-embed into a NEW
+        collection, never a silent mix — the drift Phase A step 4 measured."""
+        want = json.dumps(fingerprint, sort_keys=True)
+        row = self.db.execute(
+            "SELECT subject, embedder FROM collections WHERE collection = ?",
+            (collection,),
+        ).fetchone()
+        if row is None:
+            self.db.execute(
+                "INSERT INTO collections (collection, subject, embedder, stamped_at) "
+                "VALUES (?, ?, ?, ?)",
+                (collection, subject, want,
+                 datetime.now(timezone.utc).isoformat(timespec="seconds")),
+            )
+            self.db.commit()
+            return
+        if row["embedder"] != want:
+            raise EmbedderMismatchError(
+                f"collection {collection!r} was filled by embedder {row['embedder']}; "
+                f"this worker runs {want}. Re-embed into a new collection instead."
+            )
+
+    def collection_stamp(self, collection: str) -> dict | None:
+        row = self.db.execute(
+            "SELECT embedder FROM collections WHERE collection = ?", (collection,)
+        ).fetchone()
+        return json.loads(row["embedder"]) if row else None
 
     # --- staging (scratch, per run) -------------------------------------------
 
