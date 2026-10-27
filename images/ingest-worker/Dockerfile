@@ -24,7 +24,11 @@
 #
 # The BGE-M3 model is never exported here: it comes from a models image, so a
 # dependency bump can never change the model under stored vectors.
-ARG MODELS_IMAGE
+#
+# MODELS_IMAGE's placeholder is not a default: BuildKit refuses a blank FROM even in
+# a stage the target skips, so runtime-service needs SOME name here, and this one
+# cannot exist -- runtime-cpu built without the arg fails pulling it, by its name.
+ARG MODELS_IMAGE=localhost/runtime-cpu-needs-build-arg-models-image:unset
 
 FROM python:3.11-slim-bookworm AS base
 
